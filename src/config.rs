@@ -1,6 +1,6 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
@@ -56,18 +56,6 @@ pub struct Authentication {
     pub discord_token: Option<String>,
     pub openai_api_server: Option<String>,
     pub openai_api_key: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Model {
-    pub path: PathBuf,
-    pub context_token_length: usize,
-    /// Whether or not to use GPU support. Note that `llmcord` must be
-    /// compiled with GPU support for this to work.
-    pub use_gpu: bool,
-    /// The number of layers to offload to the GPU (if `use_gpu` is on).
-    /// If not set, all layers will be offloaded.
-    pub gpu_layers: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

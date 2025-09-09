@@ -1,9 +1,9 @@
 [package]
-description = "A Discord bot, written in Rust, that generates responses through an OpenAI-compliant API."
+description = "philpax's personal Discord bot"
 edition = "2024"
 rust-version = "1.87.0"
 license = "GPL-3.0-only"
-name = "llmcord"
+name = "paxcord"
 version = "0.2.0"
 
 [dependencies]

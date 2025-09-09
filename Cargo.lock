@@ -1148,20 +1148,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23fb14cb19457329c82206317a5663005a4d404783dc74f4252769b0d5f42856"
 
 [[package]]
-name = "llmcord"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "async-openai",
- "flume",
- "mlua",
- "serde",
- "serenity",
- "tokio",
- "toml",
-]
-
-[[package]]
 name = "lock_api"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1354,6 +1340,20 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "paxcord"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "async-openai",
+ "flume",
+ "mlua",
+ "serde",
+ "serenity",
+ "tokio",
+ "toml",
 ]
 
 [[package]]

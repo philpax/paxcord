@@ -1,8 +1,8 @@
-# llmcord
+# paxcord
 
-![llmcord logo: a vaguely Discord Clyde-looking llama](docs/llmcord.png)
+<img src="docs/paxcord.png" alt="paxcord logo: a purple crystal" width="256" />
 
-A Discord bot, written in Rust, that generates responses using an OpenAI-compatible API.
+My personal Discord bot.
 
 ## Setup
 
@@ -18,16 +18,7 @@ A Discord bot, written in Rust, that generates responses using an OpenAI-compati
 
 #### Application
 
-- Install Rust 1.68 or above using `rustup`.
-- Run `cargo run --release` to start llmcord. This will auto-generate a configuration file, and then quit.
-- Fill in the configuration file with the required details, including the path to the model.
-- You can then run llmcord to your heart's content.
-
-Note that you can define your own commands in the configuration, like so:
-
-```toml
-[commands.makecaption]
-enabled = true
-description = "Attempts to make an image description for the given prompt."
-system_prompt = "Create an evocative image description."
-```
+- Install Rust 1.87 or above using `rustup`.
+- Run `cargo run --release` to start paxcord. This will auto-generate a configuration file, and then quit.
+- Fill in the configuration file with the required details.
+- You can then run paxcord to your heart's content.
