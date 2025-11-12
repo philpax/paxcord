@@ -19,12 +19,12 @@ mlua = { version = "=0.11.0-beta.1", features = [
 ] }
 perchance-interpreter = { git = "https://github.com/philpax/perchance-interpreter" }
 rand = "0.8"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = [
+    "json",
+    "rustls-tls",
+], default-features = false }
 serde = { version = "1.0.150", features = ["derive"] }
 serde_json = "1.0"
 serenity = { version = "0.12.4" }
 tokio = { version = "1.0", features = ["full"] }
 toml = "0.7.3"
-
-[dev-dependencies]
-serial_test = "3.0"

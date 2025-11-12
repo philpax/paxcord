@@ -340,7 +340,6 @@ pub fn register(lua: &mlua::Lua) -> mlua::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
 
     /// Mock backend for testing that returns predefined rates
     struct MockBackend {
@@ -375,12 +374,10 @@ mod tests {
     }
 
     fn create_test_converter() -> CurrencyConverter {
-        let backend = Arc::new(MockBackend::new());
-        CurrencyConverter::with_backend(backend)
+        CurrencyConverter::with_backend(Arc::new(MockBackend::new()))
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_check_cache_direct() {
         let converter = create_test_converter();
         let mut cache_lock = converter.cache.lock().await;
@@ -408,7 +405,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_intermediate_calculation_two_hop() {
         let converter = create_test_converter();
         let mut cache_lock = converter.cache.lock().await;
@@ -451,7 +447,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_intermediate_calculation_reverse_path() {
         let converter = create_test_converter();
         let mut cache_lock = converter.cache.lock().await;
@@ -482,7 +477,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_intermediate_calculation_not_found() {
         let converter = create_test_converter();
         let mut cache_lock = converter.cache.lock().await;
@@ -510,7 +504,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_mock_backend_fetch() {
         let backend = Arc::new(MockBackend::new());
         let converter = CurrencyConverter::with_backend(backend.clone());
@@ -528,7 +521,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_mock_backend_no_api_calls() {
         let converter = create_test_converter();
 
