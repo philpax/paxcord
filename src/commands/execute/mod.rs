@@ -8,9 +8,8 @@ use serenity::{
 use crate::{ai::Ai, config, outputter::Outputter};
 
 pub mod app;
+pub mod extensions;
 pub mod slash;
-
-mod extensions;
 
 #[derive(Clone)]
 pub struct Handler {

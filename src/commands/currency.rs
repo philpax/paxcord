@@ -5,13 +5,11 @@ use serenity::model::application::Command;
 
 use crate::{commands::CommandHandler, util};
 
-pub struct Handler {
-    discord_config: crate::config::Discord,
-}
+pub struct Handler;
 
 impl Handler {
-    pub fn new(discord_config: crate::config::Discord) -> Self {
-        Self { discord_config }
+    pub fn new(_discord_config: crate::config::Discord) -> Self {
+        Self
     }
 }
 
@@ -110,67 +108,27 @@ impl CommandHandler for Handler {
         // Defer the response as the API call might take a moment
         cmd.defer(http).await?;
 
-        // Call the currency conversion API
-        let client = reqwest::Client::new();
-        let url = format!("https://open.er-api.com/v6/latest/{}", from);
-
-        match client
-            .get(&url)
-            .timeout(std::time::Duration::from_secs(10))
-            .send()
-            .await
+        // Call the currency conversion using the shared cache
+        let message = match crate::commands::execute::extensions::currency::convert(
+            &from, &to, amount,
+        )
+        .await
         {
-            Ok(response) if response.status().is_success() => {
-                match response.json::<serde_json::Value>().await {
-                    Ok(data) => {
-                        if let Some(rate) = data["conversion_rates"][&to].as_f64() {
-                            let converted = amount * rate;
-                            let message = format!(
-                                "**{:.2} {}** = **{:.2} {}**\n\nExchange rate: 1 {} = {:.6} {}\n\n_Rates provided by [ExchangeRate-API](https://www.exchangerate-api.com)_",
-                                amount, from, converted, to, from, rate, to
-                            );
+            Ok(converted) => {
+                let rate = converted / amount;
+                format!(
+                    "**{:.2} {}** = **{:.2} {}**\n\nExchange rate: 1 {} = {:.6} {}\n\nRates provided by [ExchangeRate-API](https://www.exchangerate-api.com)",
+                    amount, from, converted, to, from, rate, to
+                )
+            }
+            Err(e) => format!("Failed to convert currency: {}", e),
+        };
 
-                            cmd.edit_response(
-                                http,
-                                serenity::all::EditInteractionResponse::new().content(message),
-                            )
-                            .await?;
-                        } else {
-                            cmd.edit_response(
-                                http,
-                                serenity::all::EditInteractionResponse::new()
-                                    .content(format!("❌ Could not find exchange rate for {} to {}", from, to)),
-                            )
-                            .await?;
-                        }
-                    }
-                    Err(e) => {
-                        cmd.edit_response(
-                            http,
-                            serenity::all::EditInteractionResponse::new()
-                                .content(format!("❌ Failed to parse API response: {}", e)),
-                        )
-                        .await?;
-                    }
-                }
-            }
-            Ok(response) => {
-                cmd.edit_response(
-                    http,
-                    serenity::all::EditInteractionResponse::new()
-                        .content(format!("❌ API request failed with status: {}", response.status())),
-                )
-                .await?;
-            }
-            Err(e) => {
-                cmd.edit_response(
-                    http,
-                    serenity::all::EditInteractionResponse::new()
-                        .content(format!("❌ Failed to connect to API: {}", e)),
-                )
-                .await?;
-            }
-        }
+        cmd.edit_response(
+            http,
+            serenity::all::EditInteractionResponse::new().content(message),
+        )
+        .await?;
 
         Ok(())
     }

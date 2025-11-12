@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::ai::Ai;
 
-mod currency;
+pub mod currency;
 mod globals;
 mod llm;
 mod perchance;
