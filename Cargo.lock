@@ -1367,7 +1367,7 @@ checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 [[package]]
 name = "perchance-interpreter"
 version = "0.1.0"
-source = "git+https://github.com/philpax/perchance-interpreter#71817d7ef09a97ab47ba69d3f22e262faa74bffa"
+source = "git+https://github.com/philpax/perchance-interpreter#3fa001454f96c5998ed704ccbdd6017f8d511d8e"
 dependencies = [
  "rand 0.8.5",
 ]
