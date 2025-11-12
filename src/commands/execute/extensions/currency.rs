@@ -221,32 +221,29 @@ impl CurrencyConverter {
         let cache = self.cache.lock().await;
 
         // Check if we have rates FROM the source currency
-        if let Some(from_entry) = cache.get(from) {
-            if now.duration_since(from_entry.timestamp).ok()? < CACHE_DURATION {
-                // Try two-hop conversion: from -> intermediate -> to
-                for (intermediate, from_to_intermediate_rate) in &from_entry.rates {
-                    if let Some(intermediate_entry) = cache.get(intermediate) {
-                        if now.duration_since(intermediate_entry.timestamp).ok()? < CACHE_DURATION {
-                            if let Some(intermediate_to_to_rate) = intermediate_entry.rates.get(to)
-                            {
-                                return Some(from_to_intermediate_rate * intermediate_to_to_rate);
-                            }
-                        }
-                    }
+        if let Some(from_entry) = cache.get(from)
+            && now.duration_since(from_entry.timestamp).ok()? < CACHE_DURATION
+        {
+            // Try two-hop conversion: from -> intermediate -> to
+            for (intermediate, from_to_intermediate_rate) in &from_entry.rates {
+                if let Some(intermediate_entry) = cache.get(intermediate)
+                    && now.duration_since(intermediate_entry.timestamp).ok()? < CACHE_DURATION
+                    && let Some(intermediate_to_to_rate) = intermediate_entry.rates.get(to)
+                {
+                    return Some(from_to_intermediate_rate * intermediate_to_to_rate);
                 }
             }
         }
 
         // Try reverse path: find an intermediate currency that has rates to both 'from' and 'to'
         for (_base, entry) in cache.iter() {
-            if now.duration_since(entry.timestamp).ok()? < CACHE_DURATION {
-                if let (Some(base_to_from), Some(base_to_to)) =
+            if now.duration_since(entry.timestamp).ok()? < CACHE_DURATION
+                && let (Some(base_to_from), Some(base_to_to)) =
                     (entry.rates.get(from), entry.rates.get(to))
-                {
-                    // Rate from 'from' to 'to' = (1 / base_to_from) * base_to_to
-                    // This is: (from/base) = 1/(base/from), then (from/to) = (from/base) * (base/to)
-                    return Some(base_to_to / base_to_from);
-                }
+            {
+                // Rate from 'from' to 'to' = (1 / base_to_from) * base_to_to
+                // This is: (from/base) = 1/(base/from), then (from/to) = (from/base) * (base/to)
+                return Some(base_to_to / base_to_from);
             }
         }
 
