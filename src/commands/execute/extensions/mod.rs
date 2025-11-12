@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::ai::Ai;
 
+mod currency;
 mod globals;
 mod llm;
 mod perchance;
@@ -15,5 +16,6 @@ pub fn register(
     globals::register(lua, output_tx, print_tx)?;
     llm::register(lua, ai)?;
     perchance::register(lua)?;
+    currency::register(lua)?;
     Ok(())
 }

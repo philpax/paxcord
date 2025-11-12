@@ -57,6 +57,10 @@ async fn main() -> anyhow::Result<()> {
                 Box::new(commands::execute::slash::Handler::new(base)),
             ]
         })
+        .chain(std::iter::once(
+            Box::new(commands::currency::Handler::new(config.discord.clone()))
+                as Box<dyn commands::CommandHandler>,
+        ))
         .map(|handler| (handler.name().to_string(), handler))
         .collect();
 

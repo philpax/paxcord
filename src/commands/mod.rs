@@ -1,5 +1,6 @@
 use serenity::all::{CommandInteraction, Http};
 
+pub mod currency;
 pub mod execute;
 pub mod hallucinate;
 
