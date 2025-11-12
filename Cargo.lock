@@ -1351,6 +1351,7 @@ dependencies = [
  "flume",
  "mlua",
  "perchance-interpreter",
+ "rand 0.8.5",
  "serde",
  "serenity",
  "tokio",

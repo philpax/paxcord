@@ -2,6 +2,9 @@ use std::sync::Arc;
 
 use perchance_interpreter::CompiledProgram;
 
+// Newtype wrapper to satisfy the orphan rule
+struct PerchanceProgram(CompiledProgram);
+
 pub fn register(lua: &mlua::Lua) -> mlua::Result<()> {
     let perchance = lua.create_table()?;
 
@@ -20,7 +23,7 @@ pub fn register(lua: &mlua::Lua) -> mlua::Result<()> {
         lua.create_function(|lua, template: String| {
             let compiled = perchance_interpreter::compile_template(&template)
                 .map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
-            lua.create_any_userdata(compiled)
+            lua.create_any_userdata(PerchanceProgram(compiled))
         })?,
     )?;
 
@@ -29,12 +32,12 @@ pub fn register(lua: &mlua::Lua) -> mlua::Result<()> {
     Ok(())
 }
 
-impl mlua::UserData for CompiledProgram {
+impl mlua::UserData for PerchanceProgram {
     fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("evaluate", |_lua, this, seed: u64| {
             use rand::SeedableRng;
             let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-            perchance_interpreter::evaluate(this, &mut rng)
+            perchance_interpreter::evaluate(&this.0, &mut rng)
                 .map_err(|e| mlua::Error::ExternalError(Arc::new(e)))
         });
     }
