@@ -4,6 +4,7 @@ use crate::ai::Ai;
 
 mod globals;
 mod llm;
+mod perchance;
 
 pub fn register(
     lua: &mlua::Lua,
@@ -13,5 +14,6 @@ pub fn register(
 ) -> mlua::Result<()> {
     globals::register(lua, output_tx, print_tx)?;
     llm::register(lua, ai)?;
+    perchance::register(lua)?;
     Ok(())
 }
