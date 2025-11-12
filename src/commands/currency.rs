@@ -5,19 +5,15 @@ use serenity::all::{
 };
 use serenity::model::application::Command;
 
-use crate::{
-    commands::CommandHandler, commands::execute::extensions::currency::CurrencyConverter, util,
-};
+use crate::{commands::CommandHandler, currency::CurrencyConverter, util};
 
 pub struct Handler {
     converter: Arc<CurrencyConverter>,
 }
 
 impl Handler {
-    pub fn new(_discord_config: crate::config::Discord) -> Self {
-        Self {
-            converter: Arc::new(CurrencyConverter::new()),
-        }
+    pub fn new(_discord_config: crate::config::Discord, converter: Arc<CurrencyConverter>) -> Self {
+        Self { converter }
     }
 }
 
