@@ -40,21 +40,6 @@ pub fn register(lua: &mlua::Lua, converter: Arc<CurrencyConverter>) -> mlua::Res
         })?,
     )?;
 
-    // Function to clear the cache
-    currency.set(
-        "clear_cache",
-        lua.create_async_function({
-            let converter = converter.clone();
-            move |_lua, ()| {
-                let converter = converter.clone();
-                async move {
-                    converter.clear_cache().await;
-                    Ok(())
-                }
-            }
-        })?,
-    )?;
-
     lua.globals().set("currency", currency)?;
 
     Ok(())

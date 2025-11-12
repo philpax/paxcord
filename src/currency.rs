@@ -125,11 +125,6 @@ impl CurrencyConverter {
         self.get_conversion_rate(&from, &to).await
     }
 
-    /// Clear the cache
-    pub async fn clear_cache(&self) {
-        self.cache.lock().await.clear();
-    }
-
     /// Get conversion rate from one currency to another
     async fn get_conversion_rate(&self, from: &str, to: &str) -> anyhow::Result<f64> {
         let now = SystemTime::now();
