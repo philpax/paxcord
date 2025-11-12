@@ -117,7 +117,7 @@ impl CommandHandler for Handler {
             Ok(converted) => {
                 let rate = converted / amount;
                 format!(
-                    "**{:.2} {}** = **{:.2} {}**\n\nExchange rate: 1 {} = {:.6} {}\n\nRates provided by [ExchangeRate-API](https://www.exchangerate-api.com)",
+                    "**{:.2} {}** = **{:.2} {}**\n-# Exchange rate: 1 {} = {:.6} {}",
                     amount, from, converted, to, from, rate, to
                 )
             }

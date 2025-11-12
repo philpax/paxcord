@@ -16,15 +16,6 @@ struct RateCache {
     last_request: SystemTime,
 }
 
-/// Response from ExchangeRate-API
-#[derive(Debug, Deserialize)]
-struct ExchangeRateResponse {
-    result: String,
-    conversion_rates: HashMap<String, f64>,
-    #[serde(rename = "time_last_update_unix")]
-    _time_last_update: u64,
-}
-
 const CACHE_DURATION: Duration = Duration::from_secs(24 * 60 * 60); // 24 hours
 const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(60 * 60); // 1 hour
 
@@ -39,7 +30,6 @@ trait CurrencyBackend: Send + Sync {
 struct ExchangeRateApiBackend {
     client: reqwest::Client,
 }
-
 impl ExchangeRateApiBackend {
     fn new() -> Self {
         Self {
@@ -47,11 +37,16 @@ impl ExchangeRateApiBackend {
         }
     }
 }
-
 #[serenity::async_trait]
 impl CurrencyBackend for ExchangeRateApiBackend {
     async fn fetch_rates(&self, base: &str) -> anyhow::Result<HashMap<String, f64>> {
-        let url = format!("https://open.er-api.com/v6/latest/{}", base);
+        /// Response from ExchangeRate-API
+        #[derive(Debug, Deserialize)]
+        struct ExchangeRateResponse {
+            result: String,
+            rates: HashMap<String, f64>,
+        }
+        let url = format!("https://open.er-api.com/v6/latest/{base}");
 
         let response = self
             .client
@@ -73,7 +68,7 @@ impl CurrencyBackend for ExchangeRateApiBackend {
             return Err(anyhow::anyhow!("API returned non-success result"));
         }
 
-        Ok(data.conversion_rates)
+        Ok(data.rates)
     }
 }
 

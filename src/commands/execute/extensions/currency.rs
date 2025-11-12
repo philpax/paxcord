@@ -11,7 +11,7 @@ pub fn register(lua: &mlua::Lua, converter: Arc<CurrencyConverter>) -> mlua::Res
         "convert",
         lua.create_async_function({
             let converter = converter.clone();
-            move |_lua, (from, to, amount): (String, String, f64)| {
+            move |_lua, (amount, from, to): (f64, String, String)| {
                 let converter = converter.clone();
                 async move {
                     converter
