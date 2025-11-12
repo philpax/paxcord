@@ -125,13 +125,11 @@ impl<'a> Outputter<'a> {
         };
 
         // Add the cancel button to the last message
-        if !self.in_terminal_state {
-            if let Some(last) = self.messages.last_mut() {
-                // TODO: if-let chain, 1.88
-                if last.components.is_empty() {
-                    crate::cancel::add_button(self.http, first_id, last, self.user_id).await?;
-                }
-            }
+        if !self.in_terminal_state
+            && let Some(last) = self.messages.last_mut()
+            && last.components.is_empty()
+        {
+            crate::cancel::add_button(self.http, first_id, last, self.user_id).await?;
         }
 
         Ok(())

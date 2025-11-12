@@ -16,6 +16,7 @@ mod cancel;
 mod commands;
 mod config;
 mod constant;
+mod currency;
 mod outputter;
 mod util;
 
@@ -31,6 +32,7 @@ async fn main() -> anyhow::Result<()> {
         .context("Expected authentication.discord_token to be filled in config")?;
 
     let ai = Arc::new(ai::Ai::load(&config).await?);
+    let currency_converter = Arc::new(currency::CurrencyConverter::new());
 
     let (cancel_tx, cancel_rx) = flume::unbounded::<MessageId>();
     let handlers: HashMap<String, Box<dyn commands::CommandHandler>> = config
@@ -50,6 +52,7 @@ async fn main() -> anyhow::Result<()> {
                 config.discord.clone(),
                 cancel_rx.clone(),
                 ai.clone(),
+                currency_converter.clone(),
             );
             [
                 Box::new(commands::execute::app::Handler::new(base.clone()))
@@ -57,6 +60,11 @@ async fn main() -> anyhow::Result<()> {
                 Box::new(commands::execute::slash::Handler::new(base)),
             ]
         })
+        .chain(std::iter::once(Box::new(commands::currency::Handler::new(
+            config.discord.clone(),
+            currency_converter.clone(),
+        ))
+            as Box<dyn commands::CommandHandler>))
         .map(|handler| (handler.name().to_string(), handler))
         .collect();
 

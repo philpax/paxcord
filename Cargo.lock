@@ -881,6 +881,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.2",
  "tower-service",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -1352,7 +1353,9 @@ dependencies = [
  "mlua",
  "perchance-interpreter",
  "rand 0.8.5",
+ "reqwest 0.12.15",
  "serde",
+ "serde_json",
  "serenity",
  "tokio",
  "toml",
@@ -1669,6 +1672,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
+ "webpki-roots 0.26.11",
  "windows-registry",
 ]
 

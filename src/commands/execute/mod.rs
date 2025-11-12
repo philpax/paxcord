@@ -5,29 +5,31 @@ use serenity::{
     futures::StreamExt as _,
 };
 
-use crate::{ai::Ai, config, outputter::Outputter};
+use crate::{ai::Ai, config, currency::CurrencyConverter, outputter::Outputter};
 
 pub mod app;
+pub mod extensions;
 pub mod slash;
-
-mod extensions;
 
 #[derive(Clone)]
 pub struct Handler {
     discord_config: config::Discord,
     cancel_rx: flume::Receiver<MessageId>,
     ai: Arc<Ai>,
+    currency_converter: Arc<CurrencyConverter>,
 }
 impl Handler {
     pub fn new(
         discord_config: config::Discord,
         cancel_rx: flume::Receiver<MessageId>,
         ai: Arc<Ai>,
+        currency_converter: Arc<CurrencyConverter>,
     ) -> Self {
         Self {
             discord_config,
             cancel_rx,
             ai,
+            currency_converter,
         }
     }
 
@@ -51,7 +53,12 @@ impl Handler {
         let (output_tx, output_rx) = flume::unbounded::<String>();
         let (print_tx, print_rx) = flume::unbounded::<String>();
 
-        let lua = create_lua_state(self.ai.clone(), output_tx, print_tx)?;
+        let lua = create_lua_state(
+            self.ai.clone(),
+            self.currency_converter.clone(),
+            output_tx,
+            print_tx,
+        )?;
         let mut thread = load_async_expression::<Option<String>>(&lua, code)?;
 
         struct Output {
@@ -142,6 +149,7 @@ impl Handler {
 
 fn create_lua_state(
     ai: Arc<Ai>,
+    currency_converter: Arc<CurrencyConverter>,
     output_tx: flume::Sender<String>,
     print_tx: flume::Sender<String>,
 ) -> mlua::Result<mlua::Lua> {
@@ -153,7 +161,7 @@ fn create_lua_state(
         mlua::LuaOptions::new().catch_rust_panics(true),
     )?;
 
-    extensions::register(&lua, ai, output_tx, print_tx)?;
+    extensions::register(&lua, ai, currency_converter, output_tx, print_tx)?;
 
     Ok(lua)
 }

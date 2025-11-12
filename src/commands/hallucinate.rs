@@ -150,12 +150,12 @@ impl CommandHandler for Handler {
         let mut errored = false;
         let mut message = String::new();
         while let Some(response) = stream.next().await {
-            if let Ok(cancel_message_id) = self.cancel_rx.try_recv() {
-                if cancel_message_id == starting_message_id {
-                    outputter.cancelled().await?;
-                    errored = true;
-                    break;
-                }
+            if let Ok(cancel_message_id) = self.cancel_rx.try_recv()
+                && cancel_message_id == starting_message_id
+            {
+                outputter.cancelled().await?;
+                errored = true;
+                break;
             }
 
             match response {
