@@ -1350,6 +1350,7 @@ dependencies = [
  "async-openai",
  "flume",
  "mlua",
+ "perchance-interpreter",
  "serde",
  "serenity",
  "tokio",
@@ -1361,6 +1362,14 @@ name = "percent-encoding"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
+
+[[package]]
+name = "perchance-interpreter"
+version = "0.1.0"
+source = "git+https://github.com/philpax/perchance-interpreter#71817d7ef09a97ab47ba69d3f22e262faa74bffa"
+dependencies = [
+ "rand 0.8.5",
+]
 
 [[package]]
 name = "pin-project"
