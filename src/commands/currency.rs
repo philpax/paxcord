@@ -1,15 +1,23 @@
+use std::sync::Arc;
+
 use serenity::all::{
     CommandInteraction, CommandOptionType, CreateCommand, CreateCommandOption, Http,
 };
 use serenity::model::application::Command;
 
-use crate::{commands::CommandHandler, util};
+use crate::{
+    commands::CommandHandler, commands::execute::extensions::currency::CurrencyConverter, util,
+};
 
-pub struct Handler;
+pub struct Handler {
+    converter: Arc<CurrencyConverter>,
+}
 
 impl Handler {
     pub fn new(_discord_config: crate::config::Discord) -> Self {
-        Self
+        Self {
+            converter: Arc::new(CurrencyConverter::new()),
+        }
     }
 }
 
@@ -108,12 +116,8 @@ impl CommandHandler for Handler {
         // Defer the response as the API call might take a moment
         cmd.defer(http).await?;
 
-        // Call the currency conversion using the shared cache
-        let message = match crate::commands::execute::extensions::currency::convert(
-            &from, &to, amount,
-        )
-        .await
-        {
+        // Call the currency conversion using the shared converter
+        let message = match self.converter.convert(&from, &to, amount).await {
             Ok(converted) => {
                 let rate = converted / amount;
                 format!(
