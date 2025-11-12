@@ -374,16 +374,15 @@ mod tests {
         }
     }
 
-    fn create_test_converter() -> (CurrencyConverter, Arc<MockBackend>) {
+    fn create_test_converter() -> CurrencyConverter {
         let backend = Arc::new(MockBackend::new());
-        let converter = CurrencyConverter::with_backend(backend.clone());
-        (converter, backend)
+        CurrencyConverter::with_backend(backend)
     }
 
     #[tokio::test]
     #[serial]
     async fn test_check_cache_direct() {
-        let (converter, _backend) = create_test_converter();
+        let converter = create_test_converter();
         let mut cache_lock = converter.cache.lock().await;
 
         // Set up cache with ZZA rates
@@ -411,7 +410,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_intermediate_calculation_two_hop() {
-        let (converter, _backend) = create_test_converter();
+        let converter = create_test_converter();
         let mut cache_lock = converter.cache.lock().await;
 
         // Set up cache: XXA -> XXB and XXB -> XXC
@@ -454,7 +453,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_intermediate_calculation_reverse_path() {
-        let (converter, _backend) = create_test_converter();
+        let converter = create_test_converter();
         let mut cache_lock = converter.cache.lock().await;
 
         // Set up cache: XYB has rates to both XYA and XYC
@@ -485,7 +484,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_intermediate_calculation_not_found() {
-        let (converter, _backend) = create_test_converter();
+        let converter = create_test_converter();
         let mut cache_lock = converter.cache.lock().await;
 
         // Set up cache with no path from JPY to BRL
@@ -513,7 +512,8 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_mock_backend_fetch() {
-        let (converter, backend) = create_test_converter();
+        let backend = Arc::new(MockBackend::new());
+        let converter = CurrencyConverter::with_backend(backend.clone());
 
         // Set up mock rates
         let mut usd_rates = HashMap::new();
@@ -530,7 +530,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_mock_backend_no_api_calls() {
-        let (converter, _backend) = create_test_converter();
+        let converter = create_test_converter();
 
         // Don't set up any rates - this should fail without hitting the API
         let result = converter.convert("USD", "EUR", 100.0).await;
