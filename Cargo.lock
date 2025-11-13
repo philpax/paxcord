@@ -85,6 +85,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-recursion"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b43422f69d8ff38f95f1b2bb76517c91589a924d1559a0e935d7c8ce0274c11"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.88"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1370,9 +1381,12 @@ checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 [[package]]
 name = "perchance-interpreter"
 version = "0.1.0"
-source = "git+https://github.com/philpax/perchance-interpreter#3fa001454f96c5998ed704ccbdd6017f8d511d8e"
+source = "git+https://github.com/philpax/perchance-interpreter#c31b1c3245ba5af3f3db427e8a0f63cc272ba265"
 dependencies = [
+ "async-recursion",
+ "async-trait",
  "rand 0.8.5",
+ "tokio",
 ]
 
 [[package]]
