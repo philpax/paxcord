@@ -1381,7 +1381,7 @@ checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
 [[package]]
 name = "perchance-interpreter"
 version = "0.1.0"
-source = "git+https://github.com/philpax/perchance-interpreter#c31b1c3245ba5af3f3db427e8a0f63cc272ba265"
+source = "git+https://github.com/philpax/perchance-interpreter#44e68449631811ce8c9716b3dbf4798b0fe4923f"
 dependencies = [
  "async-recursion",
  "async-trait",
