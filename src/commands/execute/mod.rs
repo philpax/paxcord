@@ -163,6 +163,57 @@ fn create_lua_state(
 
     extensions::register(&lua, ai, currency_converter, output_tx, print_tx)?;
 
+    // Load scripts/main.lua if it exists
+    let main_script = std::path::Path::new("scripts/main.lua");
+    if main_script.exists() {
+        let code = std::fs::read_to_string(main_script)
+            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to read main.lua: {}", e)))?;
+        lua.load(&code)
+            .set_name("main.lua")
+            .exec()?;
+    }
+
+    Ok(lua)
+}
+
+pub fn create_global_lua_state(
+    ai: Arc<Ai>,
+    currency_converter: Arc<CurrencyConverter>,
+    output_tx: flume::Sender<String>,
+    print_tx: flume::Sender<String>,
+    command_registry: extensions::discord::CommandRegistry,
+) -> mlua::Result<mlua::Lua> {
+    let lua = mlua::Lua::new_with(
+        {
+            use mlua::StdLib as SL;
+            SL::COROUTINE | SL::MATH | SL::STRING | SL::TABLE | SL::UTF8 | SL::VECTOR
+        },
+        mlua::LuaOptions::new().catch_rust_panics(true),
+    )?;
+
+    extensions::register(&lua, ai, currency_converter, output_tx, print_tx)?;
+    extensions::discord::register(&lua, command_registry)?;
+
+    // Load scripts/main.lua if it exists
+    let main_script = std::path::Path::new("scripts/main.lua");
+    if main_script.exists() {
+        let code = std::fs::read_to_string(main_script)
+            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to read main.lua: {}", e)))?;
+        lua.load(&code)
+            .set_name("main.lua")
+            .exec()?;
+    }
+
+    // Load scripts/commands.lua if it exists
+    let commands_script = std::path::Path::new("scripts/commands.lua");
+    if commands_script.exists() {
+        let code = std::fs::read_to_string(commands_script)
+            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to read commands.lua: {}", e)))?;
+        lua.load(&code)
+            .set_name("commands.lua")
+            .exec()?;
+    }
+
     Ok(lua)
 }
 
