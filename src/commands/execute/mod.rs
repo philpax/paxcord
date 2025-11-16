@@ -168,9 +168,7 @@ fn create_lua_state(
     if main_script.exists() {
         let code = std::fs::read_to_string(main_script)
             .map_err(|e| mlua::Error::RuntimeError(format!("Failed to read main.lua: {}", e)))?;
-        lua.load(&code)
-            .set_name("main.lua")
-            .exec()?;
+        lua.load(&code).set_name("main.lua").exec()?;
     }
 
     Ok(lua)
@@ -199,19 +197,16 @@ pub fn create_global_lua_state(
     if main_script.exists() {
         let code = std::fs::read_to_string(main_script)
             .map_err(|e| mlua::Error::RuntimeError(format!("Failed to read main.lua: {}", e)))?;
-        lua.load(&code)
-            .set_name("main.lua")
-            .exec()?;
+        lua.load(&code).set_name("main.lua").exec()?;
     }
 
     // Load scripts/commands.lua if it exists
     let commands_script = std::path::Path::new("scripts/commands.lua");
     if commands_script.exists() {
-        let code = std::fs::read_to_string(commands_script)
-            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to read commands.lua: {}", e)))?;
-        lua.load(&code)
-            .set_name("commands.lua")
-            .exec()?;
+        let code = std::fs::read_to_string(commands_script).map_err(|e| {
+            mlua::Error::RuntimeError(format!("Failed to read commands.lua: {}", e))
+        })?;
+        lua.load(&code).set_name("commands.lua").exec()?;
     }
 
     Ok(lua)

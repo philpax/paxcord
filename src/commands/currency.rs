@@ -1,3 +1,6 @@
+// This module is kept for reference but not currently used
+#![allow(dead_code)]
+
 use std::sync::Arc;
 
 use serenity::all::{

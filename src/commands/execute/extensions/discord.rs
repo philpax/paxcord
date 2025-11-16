@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use mlua::prelude::*;
 use parking_lot::Mutex;
 use serenity::all::{CommandOptionType, CreateCommand, CreateCommandOption};
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct LuaCommandOption {
@@ -35,7 +35,8 @@ pub fn create_registry() -> CommandRegistry {
 pub fn register(lua: &Lua, registry: CommandRegistry) -> LuaResult<()> {
     // Create a global table to store command handlers
     let handlers_table = lua.create_table()?;
-    lua.globals().set("_discord_command_handlers", handlers_table)?;
+    lua.globals()
+        .set("_discord_command_handlers", handlers_table)?;
 
     let discord = lua.create_table()?;
 
@@ -64,7 +65,12 @@ pub fn register(lua: &Lua, registry: CommandRegistry) -> LuaResult<()> {
                     "role" => CommandOptionType::Role,
                     "mentionable" => CommandOptionType::Mentionable,
                     "attachment" => CommandOptionType::Attachment,
-                    _ => return Err(LuaError::runtime(format!("Unknown option type: {}", opt_type_str))),
+                    _ => {
+                        return Err(LuaError::runtime(format!(
+                            "Unknown option type: {}",
+                            opt_type_str
+                        )));
+                    }
                 };
 
                 let min_value: Option<f64> = opt.get("min_value").ok();
@@ -74,18 +80,19 @@ pub fn register(lua: &Lua, registry: CommandRegistry) -> LuaResult<()> {
                 let autocomplete: bool = opt.get("autocomplete").unwrap_or(false);
 
                 // Parse choices if present
-                let choices: Vec<(String, String)> = if let Ok(choices_table) = opt.get::<LuaTable>("choices") {
-                    let mut choices = Vec::new();
-                    for pair in choices_table.sequence_values::<LuaTable>() {
-                        let choice = pair?;
-                        let choice_name: String = choice.get("name")?;
-                        let choice_value: String = choice.get("value")?;
-                        choices.push((choice_name, choice_value));
-                    }
-                    choices
-                } else {
-                    Vec::new()
-                };
+                let choices: Vec<(String, String)> =
+                    if let Ok(choices_table) = opt.get::<LuaTable>("choices") {
+                        let mut choices = Vec::new();
+                        for pair in choices_table.sequence_values::<LuaTable>() {
+                            let choice = pair?;
+                            let choice_name: String = choice.get("name")?;
+                            let choice_value: String = choice.get("value")?;
+                            choices.push((choice_name, choice_value));
+                        }
+                        choices
+                    } else {
+                        Vec::new()
+                    };
 
                 options.push(LuaCommandOption {
                     name: opt_name,
@@ -131,12 +138,8 @@ impl LuaCommand {
         let mut cmd = CreateCommand::new(&self.name).description(&self.description);
 
         for opt in &self.options {
-            let mut option = CreateCommandOption::new(
-                opt.option_type,
-                &opt.name,
-                &opt.description,
-            )
-            .required(opt.required);
+            let mut option = CreateCommandOption::new(opt.option_type, &opt.name, &opt.description)
+                .required(opt.required);
 
             if let Some(min_value) = opt.min_value {
                 option = option.min_number_value(min_value);

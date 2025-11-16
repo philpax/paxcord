@@ -1,7 +1,10 @@
 /// names of values used in interactions
 pub mod value {
+    #[allow(dead_code)]
     pub const PROMPT: &str = "prompt";
+    #[allow(dead_code)]
     pub const SEED: &str = "seed";
+    #[allow(dead_code)]
     pub const MODEL: &str = "model";
 
     pub const MESSAGE_ID: &str = "message_id";

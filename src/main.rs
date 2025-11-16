@@ -43,18 +43,16 @@ async fn main() -> anyhow::Result<()> {
     let (output_tx, _output_rx) = flume::unbounded::<String>();
     let (print_tx, _print_rx) = flume::unbounded::<String>();
 
-    let global_lua = Arc::new(Mutex::new(
-        commands::execute::create_global_lua_state(
-            ai.clone(),
-            currency_converter.clone(),
-            output_tx,
-            print_tx,
-            command_registry.clone(),
-        )?
-    ));
+    let global_lua = Arc::new(Mutex::new(commands::execute::create_global_lua_state(
+        ai.clone(),
+        currency_converter.clone(),
+        output_tx,
+        print_tx,
+        command_registry.clone(),
+    )?));
 
     // Build handlers
-    let mut handlers = build_handlers(
+    let handlers = build_handlers(
         &config,
         cancel_rx.clone(),
         reload_tx.clone(),
@@ -196,7 +194,9 @@ impl EventHandler for Handler {
                     continue;
                 }
 
-                for handler in handlers.lock().values() {
+                // Collect handlers to avoid holding lock across await
+                let handlers_vec: Vec<_> = handlers.lock().values().cloned().collect();
+                for handler in handlers_vec {
                     if let Err(e) = handler.register(&http).await {
                         eprintln!("Error registering command {}: {}", handler.name(), e);
                     }
@@ -234,7 +234,9 @@ impl Handler {
             Command::set_global_commands(http, vec![]).await?;
         }
 
-        for handler in self.handlers.lock().values() {
+        // Collect handlers to avoid holding lock across await
+        let handlers_vec: Vec<_> = self.handlers.lock().values().cloned().collect();
+        for handler in handlers_vec {
             handler.register(http).await?;
         }
 
