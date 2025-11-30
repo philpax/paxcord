@@ -7,7 +7,6 @@ use serenity::{
 
 use crate::{ai::Ai, config, currency::CurrencyConverter, outputter::Outputter};
 
-pub mod app;
 pub mod extensions;
 pub mod slash;
 
@@ -157,7 +156,7 @@ fn load_lua_file(lua: &mlua::Lua, path: &str) -> mlua::Result<()> {
     Ok(())
 }
 
-fn create_lua_state(
+pub fn create_lua_state(
     ai: Arc<Ai>,
     currency_converter: Arc<CurrencyConverter>,
     output_tx: flume::Sender<String>,

@@ -82,7 +82,7 @@ discord.register_command({
             max_value = 2147483647
         }
     },
-    execute = function(interaction)
+    execute = [[
         local model = interaction.options.model
         local prompt = interaction.options.prompt
         local seed = interaction.options.seed
@@ -97,7 +97,7 @@ discord.register_command({
         local response = stream_llm_response(messages, model, seed)
 
         output(response .. "\n\n-# Model: " .. model .. (seed and (" | Seed: " .. seed) or ""))
-    end
+    ]]
 })
 
 -- Register the /convert command
@@ -127,7 +127,7 @@ discord.register_command({
             choices = make_currency_choices()
         }
     },
-    execute = function(interaction)
+    execute = [[
         local amount = interaction.options.amount
         local from = interaction.options.from
         local to = interaction.options.to
@@ -145,7 +145,7 @@ discord.register_command({
         else
             output("Failed to convert currency")
         end
-    end
+    ]]
 })
 
 print("Commands registered successfully!")

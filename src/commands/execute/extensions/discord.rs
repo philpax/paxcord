@@ -4,11 +4,6 @@ use serenity::all::CommandOptionType;
 use crate::commands::lua_registry::{CommandRegistry, LuaCommand, LuaCommandOption};
 
 pub fn register(lua: &Lua, registry: CommandRegistry) -> LuaResult<()> {
-    // Create a global table to store command handlers
-    let handlers_table = lua.create_table()?;
-    lua.globals()
-        .set("_discord_command_handlers", handlers_table)?;
-
     let discord = lua.create_table()?;
 
     let registry_clone = registry.clone();
@@ -83,15 +78,18 @@ pub fn register(lua: &Lua, registry: CommandRegistry) -> LuaResult<()> {
             Vec::new()
         };
 
-        // Store execute handler in global table
-        let execute_fn: LuaFunction = spec.get("execute")?;
-        let handlers: LuaTable = lua.globals().get("_discord_command_handlers")?;
-        handlers.set(name.clone(), execute_fn)?;
+        // Get execute handler code as a string
+        let handler_code: String = spec.get("execute")?;
+
+        // Validate the handler code by compiling it
+        lua.load(format!("return function(interaction) {} end", handler_code))
+            .eval::<LuaFunction>()?;
 
         let command = LuaCommand {
             name,
             description,
             options,
+            handler_code,
         };
 
         registry_clone.lock().push(command);

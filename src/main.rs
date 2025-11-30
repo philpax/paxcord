@@ -95,16 +95,12 @@ fn build_handlers(
 ) -> HashMap<String, Arc<dyn commands::CommandHandler>> {
     let mut handlers: HashMap<String, Arc<dyn commands::CommandHandler>> = HashMap::new();
 
-    // Add execute commands
+    // Add execute command
     let base = commands::execute::Handler::new(
         config.discord.clone(),
         cancel_rx.clone(),
         ai.clone(),
         currency_converter.clone(),
-    );
-    handlers.insert(
-        "Execute this code block".to_string(),
-        Arc::new(commands::execute::app::Handler::new(base.clone())),
     );
     handlers.insert(
         "execute".to_string(),
@@ -117,8 +113,8 @@ fn build_handlers(
         Arc::new(commands::reload::Handler::new(
             global_lua.clone(),
             command_registry.clone(),
-            ai,
-            currency_converter,
+            ai.clone(),
+            currency_converter.clone(),
             reload_tx,
         )),
     );
@@ -131,8 +127,10 @@ fn build_handlers(
             name.clone(),
             Arc::new(commands::lua_command::Handler::new(
                 name,
-                global_lua.clone(),
+                config.discord.clone(),
                 cmd,
+                ai.clone(),
+                currency_converter.clone(),
             )),
         );
     }
