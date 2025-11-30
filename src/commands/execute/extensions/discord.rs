@@ -78,18 +78,17 @@ pub fn register(lua: &Lua, registry: CommandRegistry) -> LuaResult<()> {
             Vec::new()
         };
 
-        // Get execute handler code as a string
-        let handler_code: String = spec.get("execute")?;
+        // Get execute handler as a function
+        let handler: LuaFunction = spec.get("execute")?;
 
-        // Validate the handler code by compiling it
-        lua.load(format!("return function(interaction) {} end", handler_code))
-            .eval::<LuaFunction>()?;
+        // Store the handler in the global _discord_command_handlers table
+        let handlers_table: LuaTable = lua.globals().get("_discord_command_handlers")?;
+        handlers_table.set(name.clone(), handler)?;
 
         let command = LuaCommand {
             name,
             description,
             options,
-            handler_code,
         };
 
         registry_clone.lock().push(command);

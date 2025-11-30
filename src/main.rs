@@ -130,8 +130,7 @@ fn build_handlers(
                 name,
                 config.discord.clone(),
                 cmd,
-                ai.clone(),
-                currency_converter.clone(),
+                global_lua.clone(),
             )),
         );
     }

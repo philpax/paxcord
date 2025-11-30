@@ -1,21 +1,18 @@
 use std::sync::Arc;
 
+use parking_lot::Mutex;
 use serenity::{
     all::{CommandDataOptionValue, CommandInteraction, Http},
     futures::StreamExt as _,
 };
 
-use crate::{
-    ai::Ai, commands::lua_registry::LuaCommand, config, currency::CurrencyConverter,
-    outputter::Outputter,
-};
+use crate::{commands::lua_registry::LuaCommand, config, outputter::Outputter};
 
 pub struct Handler {
     name: String,
     discord_config: config::Discord,
     command_spec: LuaCommand,
-    ai: Arc<Ai>,
-    currency_converter: Arc<CurrencyConverter>,
+    global_lua: Arc<Mutex<mlua::Lua>>,
 }
 
 impl Handler {
@@ -23,15 +20,13 @@ impl Handler {
         name: String,
         discord_config: config::Discord,
         command_spec: LuaCommand,
-        ai: Arc<Ai>,
-        currency_converter: Arc<CurrencyConverter>,
+        global_lua: Arc<Mutex<mlua::Lua>>,
     ) -> Self {
         Self {
             name,
             discord_config,
             command_spec,
-            ai,
-            currency_converter,
+            global_lua,
         }
     }
 }
@@ -48,6 +43,12 @@ impl super::CommandHandler for Handler {
         Ok(())
     }
 
+    // We intentionally hold the Lua lock across await points here. This is necessary because:
+    // 1. Discord commands share the global Lua state (unlike /execute which creates fresh states)
+    // 2. Lua objects (thread, functions, tables) are tied to the Lua state's lifetime
+    // 3. We need to prevent concurrent modification of the shared state
+    // This effectively serializes Discord command execution, which is correct given they share state.
+    #[allow(clippy::await_holding_lock)]
     async fn run(&self, http: &Http, cmd: &CommandInteraction) -> anyhow::Result<()> {
         let mut outputter = Outputter::new(
             http,
@@ -61,12 +62,32 @@ impl super::CommandHandler for Handler {
         let (output_tx, output_rx) = flume::unbounded::<String>();
         let (print_tx, print_rx) = flume::unbounded::<String>();
 
-        // Create a fresh Lua state for this execution
-        let lua = crate::commands::execute::create_lua_state(
-            self.ai.clone(),
-            self.currency_converter.clone(),
-            output_tx,
-            print_tx,
+        // Lock the global Lua state for this execution (held for entire duration)
+        let lua = self.global_lua.lock();
+
+        // Replace output() and print() functions with execution-scoped ones
+        lua.globals().set(
+            "output",
+            lua.create_function(move |_lua, values: mlua::Variadic<String>| {
+                let output_tx = output_tx.clone();
+                let output = values.into_iter().collect::<Vec<_>>().join("\t");
+                output_tx
+                    .send(output.clone())
+                    .map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
+                Ok(output)
+            })?,
+        )?;
+
+        lua.globals().set(
+            "print",
+            lua.create_function(move |_lua, values: mlua::Variadic<String>| {
+                let print_tx = print_tx.clone();
+                let output = values.into_iter().collect::<Vec<_>>().join("\t");
+                print_tx
+                    .send(output.clone())
+                    .map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
+                Ok(output)
+            })?,
         )?;
 
         // Build interaction table
@@ -97,18 +118,12 @@ impl super::CommandHandler for Handler {
 
         interaction.set("options", options)?;
 
-        // Wrap handler code in a coroutine
-        let code = format!(
-            r#"
-coroutine.create(function()
-    local interaction = ...
-    {}
-end)
-"#,
-            self.command_spec.handler_code
-        );
+        // Get the handler function from the global handlers table
+        let handlers_table: mlua::Table = lua.globals().get("_discord_command_handlers")?;
+        let handler: mlua::Function = handlers_table.get(self.name.as_str())?;
 
-        let thread: mlua::Thread = lua.load(&code).eval()?;
+        // Wrap the handler call in a coroutine
+        let thread = lua.create_thread(handler)?;
         let mut thread = thread.into_async::<()>(interaction)?;
 
         struct Output {

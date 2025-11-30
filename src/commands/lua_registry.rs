@@ -17,13 +17,13 @@ pub struct LuaCommandOption {
     pub choices: Vec<(String, String)>, // (name, value) for string choices
 }
 
-// LuaCommand stores command metadata and handler code
+// LuaCommand stores command metadata only.
+// Handler functions are stored in the global Lua state's _discord_command_handlers table.
 #[derive(Clone)]
 pub struct LuaCommand {
     pub name: String,
     pub description: String,
     pub options: Vec<LuaCommandOption>,
-    pub handler_code: String,
 }
 
 pub type CommandRegistry = Arc<Mutex<Vec<LuaCommand>>>;
