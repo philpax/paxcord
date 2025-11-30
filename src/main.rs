@@ -66,6 +66,7 @@ async fn main() -> anyhow::Result<()> {
         .event_handler(Handler {
             handlers: Arc::new(Mutex::new(handlers)),
             cancel_tx,
+            cancel_rx,
             reload_rx,
             config: config.clone(),
             ai: ai.clone(),
@@ -141,6 +142,7 @@ fn build_handlers(
 pub struct Handler {
     handlers: Arc<Mutex<HashMap<String, Arc<dyn commands::CommandHandler>>>>,
     cancel_tx: flume::Sender<MessageId>,
+    cancel_rx: flume::Receiver<MessageId>,
     reload_rx: flume::Receiver<()>,
     config: Configuration,
     ai: Arc<ai::Ai>,
@@ -161,7 +163,7 @@ impl EventHandler for Handler {
         let reload_rx = self.reload_rx.clone();
         let handlers = self.handlers.clone();
         let config = self.config.clone();
-        let cancel_rx = flume::unbounded::<MessageId>().1; // New receiver for reloaded handlers
+        let cancel_rx = self.cancel_rx.clone();
         let reload_tx = self.reload_tx.clone();
         let ai = self.ai.clone();
         let currency_converter = self.currency_converter.clone();
