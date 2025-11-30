@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
     let (reload_tx, reload_rx) = flume::unbounded::<()>();
 
     // Create command registry and global Lua state
-    let command_registry = commands::execute::extensions::discord::create_registry();
+    let command_registry = commands::lua_registry::create_registry();
     let (output_tx, _output_rx) = flume::unbounded::<String>();
     let (print_tx, _print_rx) = flume::unbounded::<String>();
 
@@ -56,10 +56,10 @@ async fn main() -> anyhow::Result<()> {
         &config,
         cancel_rx.clone(),
         reload_tx.clone(),
-        &ai,
-        &currency_converter,
-        &global_lua,
-        &command_registry,
+        ai.clone(),
+        currency_converter.clone(),
+        global_lua.clone(),
+        command_registry.clone(),
     );
 
     let mut client = Client::builder(discord_token, GatewayIntents::default())
@@ -88,10 +88,10 @@ fn build_handlers(
     config: &Configuration,
     cancel_rx: flume::Receiver<MessageId>,
     reload_tx: flume::Sender<()>,
-    ai: &Arc<ai::Ai>,
-    currency_converter: &Arc<currency::CurrencyConverter>,
-    global_lua: &Arc<Mutex<mlua::Lua>>,
-    command_registry: &commands::execute::extensions::discord::CommandRegistry,
+    ai: Arc<ai::Ai>,
+    currency_converter: Arc<currency::CurrencyConverter>,
+    global_lua: Arc<Mutex<mlua::Lua>>,
+    command_registry: commands::CommandRegistry,
 ) -> HashMap<String, Arc<dyn commands::CommandHandler>> {
     let mut handlers: HashMap<String, Arc<dyn commands::CommandHandler>> = HashMap::new();
 
@@ -117,8 +117,8 @@ fn build_handlers(
         Arc::new(commands::reload::Handler::new(
             global_lua.clone(),
             command_registry.clone(),
-            ai.clone(),
-            currency_converter.clone(),
+            ai,
+            currency_converter,
             reload_tx,
         )),
     );
@@ -148,7 +148,7 @@ pub struct Handler {
     ai: Arc<ai::Ai>,
     currency_converter: Arc<currency::CurrencyConverter>,
     global_lua: Arc<Mutex<mlua::Lua>>,
-    command_registry: commands::execute::extensions::discord::CommandRegistry,
+    command_registry: commands::CommandRegistry,
     reload_tx: flume::Sender<()>,
 }
 #[async_trait]
@@ -179,10 +179,10 @@ impl EventHandler for Handler {
                     &config,
                     cancel_rx.clone(),
                     reload_tx.clone(),
-                    &ai,
-                    &currency_converter,
-                    &global_lua,
-                    &command_registry,
+                    ai.clone(),
+                    currency_converter.clone(),
+                    global_lua.clone(),
+                    command_registry.clone(),
                 );
 
                 // Update handlers

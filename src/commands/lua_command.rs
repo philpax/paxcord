@@ -7,7 +7,7 @@ use serenity::{
     builder::{CreateInteractionResponse, CreateInteractionResponseMessage},
 };
 
-use crate::commands::execute::extensions::discord::LuaCommand;
+use crate::commands::lua_registry::LuaCommand;
 
 pub struct Handler {
     name: String,

@@ -7,7 +7,7 @@ use serenity::{
 };
 
 use crate::ai::Ai;
-use crate::commands::execute::extensions::discord::CommandRegistry;
+use crate::commands::CommandRegistry;
 use crate::currency::CurrencyConverter;
 
 pub struct Handler {
