@@ -22,21 +22,18 @@ end
 
 -- Async helper to stream LLM responses
 function stream_llm_response(messages, model, seed)
-    model = model or "gpt-4o-mini"
+    local full_response = ""
 
-    local stream = llm.stream({
+    llm.stream({
         messages = messages,
         model = model,
-        seed = seed
-    })
-
-    local full_response = ""
-    for chunk in stream do
-        if chunk.content then
-            full_response = full_response .. chunk.content
-            output(full_response)
+        seed = seed,
+        callback = function(chunk)
+            output(chunk)
+            full_response = chunk
+            return true
         end
-    end
+    })
 
     return full_response
 end

@@ -43,11 +43,30 @@ local function make_currency_choices()
     return choices
 end
 
+-- Helper to create model choices from llm.models
+local function make_model_choices()
+    local choices = {}
+    for _, model in ipairs(llm.models) do
+        table.insert(choices, {
+            name = model,
+            value = model
+        })
+    end
+    return choices
+end
+
 -- Register the /ask command (default hallucinate command)
 discord.register_command({
     name = "ask",
     description = "Responds to the provided instruction",
     options = {
+        {
+            name = "model",
+            description = "The model to use",
+            type = "string",
+            required = true,
+            choices = make_model_choices()
+        },
         {
             name = "prompt",
             description = "The prompt to send to the AI",
@@ -57,13 +76,14 @@ discord.register_command({
         {
             name = "seed",
             description = "Random seed for deterministic output",
-            type = "number",
+            type = "integer",
             required = false,
             min_value = 0,
             max_value = 2147483647
         }
     },
     execute = function(interaction)
+        local model = interaction.options.model
         local prompt = interaction.options.prompt
         local seed = interaction.options.seed
 
@@ -74,9 +94,9 @@ discord.register_command({
             llm.user(prompt)
         }
 
-        local response = stream_llm_response(messages, "gpt-4o-mini", seed)
+        local response = stream_llm_response(messages, model, seed)
 
-        output(response .. "\n\n-# Model: gpt-4o-mini" .. (seed and (" | Seed: " .. seed) or ""))
+        output(response .. "\n\n-# Model: " .. model .. (seed and (" | Seed: " .. seed) or ""))
     end
 })
 
