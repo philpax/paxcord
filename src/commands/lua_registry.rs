@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use serenity::all::{CommandOptionType, CreateCommand, CreateCommandOption};
 
@@ -16,19 +19,18 @@ pub struct LuaCommandOption {
     pub choices: Vec<(String, String)>, // (name, value) for string choices
 }
 
-// LuaCommand stores command metadata only.
-// Handler functions are stored in the global Lua state's _discord_command_handlers table.
-#[derive(Clone)]
+// LuaCommand stores command metadata and handler function reference
 pub struct LuaCommand {
     pub name: String,
     pub description: String,
     pub options: Vec<LuaCommandOption>,
+    pub handler: mlua::RegistryKey, // Function stored in Lua registry
 }
 
-pub type CommandRegistry = Arc<Mutex<Vec<LuaCommand>>>;
+pub type CommandRegistry = Arc<Mutex<HashMap<String, LuaCommand>>>;
 
 pub fn create_registry() -> CommandRegistry {
-    Arc::new(Mutex::new(Vec::new()))
+    Arc::new(Mutex::new(HashMap::new()))
 }
 
 impl LuaCommand {

@@ -78,20 +78,18 @@ pub fn register(lua: &Lua, registry: CommandRegistry) -> LuaResult<()> {
             Vec::new()
         };
 
-        // Get execute handler as a function
+        // Get execute handler as a function and store in registry
         let handler: LuaFunction = spec.get("execute")?;
-
-        // Store the handler in the global _discord_command_handlers table
-        let handlers_table: LuaTable = lua.globals().get("_discord_command_handlers")?;
-        handlers_table.set(name.clone(), handler)?;
+        let handler_key = lua.create_registry_value(handler)?;
 
         let command = LuaCommand {
-            name,
+            name: name.clone(),
             description,
             options,
+            handler: handler_key,
         };
 
-        registry_clone.lock().unwrap().push(command);
+        registry_clone.lock().unwrap().insert(name, command);
         Ok(())
     })?;
 

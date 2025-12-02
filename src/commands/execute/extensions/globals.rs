@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use super::output_userdata::OutputChannels;
 
 pub fn register(
     lua: &mlua::Lua,
@@ -26,29 +26,47 @@ pub fn register(
             .eval::<mlua::Value>()?,
     )?;
 
+    // Create output channels userdata
+    let channels = OutputChannels::new(output_tx, print_tx);
+
+    // Store channels in registry for later updates
+    lua.set_named_registry_value("_output_channels", channels.clone())?;
+
+    // Create output() function that uses the userdata
     lua.globals().set(
         "output",
         lua.create_function(move |_lua, values: mlua::Variadic<String>| {
-            let output_tx = output_tx.clone();
+            let channels_ud: mlua::AnyUserData = _lua.named_registry_value("_output_channels")?;
+            let channels = channels_ud.borrow::<OutputChannels>()?;
             let output = values.into_iter().collect::<Vec<_>>().join("\t");
-            output_tx
-                .send(output.clone())
-                .map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
+            channels.send_output(output.clone())?;
             Ok(output)
         })?,
     )?;
 
+    // Create print() function that uses the userdata
     lua.globals().set(
         "print",
         lua.create_function(move |_lua, values: mlua::Variadic<String>| {
-            let print_tx = print_tx.clone();
+            let channels_ud: mlua::AnyUserData = _lua.named_registry_value("_output_channels")?;
+            let channels = channels_ud.borrow::<OutputChannels>()?;
             let output = values.into_iter().collect::<Vec<_>>().join("\t");
-            print_tx
-                .send(output.clone())
-                .map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
+            channels.send_print(output.clone())?;
             Ok(output)
         })?,
     )?;
 
+    Ok(())
+}
+
+/// Update the output channels for execution-scoped output
+pub fn update_channels(
+    lua: &mlua::Lua,
+    output_tx: flume::Sender<String>,
+    print_tx: flume::Sender<String>,
+) -> mlua::Result<()> {
+    let channels_ud: mlua::AnyUserData = lua.named_registry_value("_output_channels")?;
+    let channels = channels_ud.borrow::<OutputChannels>()?;
+    channels.update(output_tx, print_tx);
     Ok(())
 }

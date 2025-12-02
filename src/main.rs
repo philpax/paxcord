@@ -122,15 +122,15 @@ fn build_handlers(
     );
 
     // Add Lua commands from registry
-    let lua_commands = command_registry.lock().unwrap().clone();
-    for cmd in lua_commands {
-        let name = cmd.name.clone();
+    let command_names: Vec<String> = command_registry.lock().unwrap().keys().cloned().collect();
+
+    for name in command_names {
         handlers.insert(
             name.clone(),
             Arc::new(commands::lua_command::Handler::new(
                 name,
                 config.discord.clone(),
-                cmd,
+                command_registry.clone(),
                 global_lua.clone(),
             )),
         );

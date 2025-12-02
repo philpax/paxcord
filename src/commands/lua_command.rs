@@ -6,12 +6,12 @@ use serenity::{
 };
 use tokio::sync::Mutex;
 
-use crate::{commands::lua_registry::LuaCommand, config, outputter::Outputter};
+use crate::{commands::lua_registry::CommandRegistry, config, outputter::Outputter};
 
 pub struct Handler {
     name: String,
     discord_config: config::Discord,
-    command_spec: LuaCommand,
+    command_registry: CommandRegistry,
     global_lua: Arc<Mutex<mlua::Lua>>,
 }
 
@@ -19,13 +19,13 @@ impl Handler {
     pub fn new(
         name: String,
         discord_config: config::Discord,
-        command_spec: LuaCommand,
+        command_registry: CommandRegistry,
         global_lua: Arc<Mutex<mlua::Lua>>,
     ) -> Self {
         Self {
             name,
             discord_config,
-            command_spec,
+            command_registry,
             global_lua,
         }
     }
@@ -38,8 +38,16 @@ impl super::CommandHandler for Handler {
     }
 
     async fn register(&self, http: &Http) -> anyhow::Result<()> {
-        let cmd = self.command_spec.to_discord_command();
-        serenity::all::Command::create_global_command(http, cmd).await?;
+        let command_spec = self
+            .command_registry
+            .lock()
+            .unwrap()
+            .get(&self.name)
+            .map(|cmd| cmd.to_discord_command());
+
+        if let Some(cmd) = command_spec {
+            serenity::all::Command::create_global_command(http, cmd).await?;
+        }
         Ok(())
     }
 
@@ -65,30 +73,8 @@ impl super::CommandHandler for Handler {
         // Lock the global Lua state for this execution (held for entire duration)
         let lua = self.global_lua.lock().await;
 
-        // Replace output() and print() functions with execution-scoped ones
-        lua.globals().set(
-            "output",
-            lua.create_function(move |_lua, values: mlua::Variadic<String>| {
-                let output_tx = output_tx.clone();
-                let output = values.into_iter().collect::<Vec<_>>().join("\t");
-                output_tx
-                    .send(output.clone())
-                    .map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
-                Ok(output)
-            })?,
-        )?;
-
-        lua.globals().set(
-            "print",
-            lua.create_function(move |_lua, values: mlua::Variadic<String>| {
-                let print_tx = print_tx.clone();
-                let output = values.into_iter().collect::<Vec<_>>().join("\t");
-                print_tx
-                    .send(output.clone())
-                    .map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
-                Ok(output)
-            })?,
-        )?;
+        // Update output channels for this execution
+        crate::commands::execute::extensions::update_output_channels(&lua, output_tx, print_tx)?;
 
         // Build interaction table
         let interaction = lua.create_table()?;
@@ -118,9 +104,16 @@ impl super::CommandHandler for Handler {
 
         interaction.set("options", options)?;
 
-        // Get the handler function from the global handlers table
-        let handlers_table: mlua::Table = lua.globals().get("_discord_command_handlers")?;
-        let handler: mlua::Function = handlers_table.get(self.name.as_str())?;
+        // Get the handler function from the registry
+        // We access the command registry here while holding the lua lock
+        // This is safe because we lock command_registry briefly
+        let handler: mlua::Function = {
+            let registry = self.command_registry.lock().unwrap();
+            let command = registry
+                .get(&self.name)
+                .ok_or_else(|| anyhow::anyhow!("Command not found: {}", self.name))?;
+            lua.registry_value(&command.handler)?
+        };
 
         // Wrap the handler call in a coroutine
         let thread = lua.create_thread(handler)?;
