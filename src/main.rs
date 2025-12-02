@@ -1,7 +1,6 @@
 use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
 use anyhow::Context as AnyhowContext;
-use parking_lot::Mutex;
 use serenity::{
     Client,
     all::{
@@ -43,13 +42,15 @@ async fn main() -> anyhow::Result<()> {
     let (output_tx, _output_rx) = flume::unbounded::<String>();
     let (print_tx, _print_rx) = flume::unbounded::<String>();
 
-    let global_lua = Arc::new(Mutex::new(commands::execute::create_global_lua_state(
-        ai.clone(),
-        currency_converter.clone(),
-        output_tx,
-        print_tx,
-        command_registry.clone(),
-    )?));
+    let global_lua = Arc::new(tokio::sync::Mutex::new(
+        commands::execute::create_global_lua_state(
+            ai.clone(),
+            currency_converter.clone(),
+            output_tx,
+            print_tx,
+            command_registry.clone(),
+        )?,
+    ));
 
     // Build handlers
     let handlers = build_handlers(
@@ -64,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut client = Client::builder(discord_token, GatewayIntents::default())
         .event_handler(Handler {
-            handlers: Arc::new(Mutex::new(handlers)),
+            handlers: Arc::new(std::sync::Mutex::new(handlers)),
             cancel_tx,
             cancel_rx,
             reload_rx,
@@ -91,7 +92,7 @@ fn build_handlers(
     reload_tx: flume::Sender<()>,
     ai: Arc<ai::Ai>,
     currency_converter: Arc<currency::CurrencyConverter>,
-    global_lua: Arc<Mutex<mlua::Lua>>,
+    global_lua: Arc<tokio::sync::Mutex<mlua::Lua>>,
     command_registry: commands::CommandRegistry,
 ) -> HashMap<String, Arc<dyn commands::CommandHandler>> {
     let mut handlers: HashMap<String, Arc<dyn commands::CommandHandler>> = HashMap::new();
@@ -121,7 +122,7 @@ fn build_handlers(
     );
 
     // Add Lua commands from registry
-    let lua_commands = command_registry.lock().clone();
+    let lua_commands = command_registry.lock().unwrap().clone();
     for cmd in lua_commands {
         let name = cmd.name.clone();
         handlers.insert(
@@ -138,15 +139,39 @@ fn build_handlers(
     handlers
 }
 
+/// Registers all commands with Discord, clearing existing commands if they differ
+async fn register_all_commands(
+    http: &Http,
+    handlers: &Arc<std::sync::Mutex<HashMap<String, Arc<dyn commands::CommandHandler>>>>,
+) -> anyhow::Result<()> {
+    // Check if we need to reset our registered commands
+    let registered_commands: HashSet<_> = {
+        let cmds = Command::get_global_commands(http).await?;
+        cmds.iter().map(|c| c.name.clone()).collect()
+    };
+    let our_commands: HashSet<_> = handlers.lock().unwrap().keys().cloned().collect();
+    if registered_commands != our_commands {
+        Command::set_global_commands(http, vec![]).await?;
+    }
+
+    // Collect handlers to avoid holding lock across await
+    let handlers_vec: Vec<_> = handlers.lock().unwrap().values().cloned().collect();
+    for handler in handlers_vec {
+        handler.register(http).await?;
+    }
+
+    Ok(())
+}
+
 pub struct Handler {
-    handlers: Arc<Mutex<HashMap<String, Arc<dyn commands::CommandHandler>>>>,
+    handlers: Arc<std::sync::Mutex<HashMap<String, Arc<dyn commands::CommandHandler>>>>,
     cancel_tx: flume::Sender<MessageId>,
     cancel_rx: flume::Receiver<MessageId>,
     reload_rx: flume::Receiver<()>,
     config: Configuration,
     ai: Arc<ai::Ai>,
     currency_converter: Arc<currency::CurrencyConverter>,
-    global_lua: Arc<Mutex<mlua::Lua>>,
+    global_lua: Arc<tokio::sync::Mutex<mlua::Lua>>,
     command_registry: commands::CommandRegistry,
     reload_tx: flume::Sender<()>,
 }
@@ -185,20 +210,12 @@ impl EventHandler for Handler {
                 );
 
                 // Update handlers
-                *handlers.lock() = new_handlers;
+                *handlers.lock().unwrap() = new_handlers;
 
-                // Re-register all commands
-                if let Err(e) = Command::set_global_commands(&http, vec![]).await {
-                    eprintln!("Error clearing commands: {}", e);
+                // Re-register all commands using shared logic
+                if let Err(e) = register_all_commands(&http, &handlers).await {
+                    eprintln!("Error re-registering commands: {}", e);
                     continue;
-                }
-
-                // Collect handlers to avoid holding lock across await
-                let handlers_vec: Vec<_> = handlers.lock().values().cloned().collect();
-                for handler in handlers_vec {
-                    if let Err(e) = handler.register(&http).await {
-                        eprintln!("Error registering command {}: {}", handler.name(), e);
-                    }
                 }
 
                 println!("Commands re-registered successfully!");
@@ -222,25 +239,8 @@ impl EventHandler for Handler {
 impl Handler {
     async fn ready_impl(&self, http: &Http, ready: Ready) -> anyhow::Result<()> {
         println!("{} is connected; registering commands...", ready.user.name);
-
-        // Check if we need to reset our registered commands
-        let registered_commands: HashSet<_> = {
-            let cmds = Command::get_global_commands(http).await?;
-            cmds.iter().map(|c| c.name.clone()).collect()
-        };
-        let our_commands: HashSet<_> = self.handlers.lock().keys().cloned().collect();
-        if registered_commands != our_commands {
-            Command::set_global_commands(http, vec![]).await?;
-        }
-
-        // Collect handlers to avoid holding lock across await
-        let handlers_vec: Vec<_> = self.handlers.lock().values().cloned().collect();
-        for handler in handlers_vec {
-            handler.register(http).await?;
-        }
-
+        register_all_commands(http, &self.handlers).await?;
         println!("{} is good to go!", ready.user.name);
-
         Ok(())
     }
 
@@ -252,7 +252,7 @@ impl Handler {
         match interaction {
             Interaction::Command(cmd) => {
                 let name = cmd.data.name.as_str();
-                let handler = self.handlers.lock().get(name).cloned();
+                let handler = self.handlers.lock().unwrap().get(name).cloned();
 
                 if let Some(handler) = handler {
                     handler.run(http, cmd).await?;

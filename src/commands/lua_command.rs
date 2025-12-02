@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use parking_lot::Mutex;
 use serenity::{
     all::{CommandDataOptionValue, CommandInteraction, Http},
     futures::StreamExt as _,
 };
+use tokio::sync::Mutex;
 
 use crate::{commands::lua_registry::LuaCommand, config, outputter::Outputter};
 
@@ -63,7 +63,7 @@ impl super::CommandHandler for Handler {
         let (print_tx, print_rx) = flume::unbounded::<String>();
 
         // Lock the global Lua state for this execution (held for entire duration)
-        let lua = self.global_lua.lock();
+        let lua = self.global_lua.lock().await;
 
         // Replace output() and print() functions with execution-scoped ones
         lua.globals().set(

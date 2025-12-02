@@ -91,7 +91,7 @@ pub fn register(lua: &Lua, registry: CommandRegistry) -> LuaResult<()> {
             options,
         };
 
-        registry_clone.lock().push(command);
+        registry_clone.lock().unwrap().push(command);
         Ok(())
     })?;
 

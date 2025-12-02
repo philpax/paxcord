@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use parking_lot::Mutex;
 use serenity::{
     all::{CommandInteraction, Http},
     builder::{CreateCommand, CreateInteractionResponse, CreateInteractionResponseMessage},
 };
+use tokio::sync::Mutex;
 
 use crate::ai::Ai;
 use crate::commands::CommandRegistry;
@@ -59,7 +59,7 @@ impl super::CommandHandler for Handler {
         .await?;
 
         // Clear the command registry
-        self.command_registry.lock().clear();
+        self.command_registry.lock().unwrap().clear();
 
         // Create new output channels for the global Lua state
         let (output_tx, _output_rx) = flume::unbounded::<String>();
@@ -76,7 +76,7 @@ impl super::CommandHandler for Handler {
 
         match new_lua {
             Ok(new_lua) => {
-                *self.lua_state.lock() = new_lua;
+                *self.lua_state.lock().await = new_lua;
 
                 // Signal to re-register commands
                 let _ = self.reload_tx.send(());
@@ -85,7 +85,7 @@ impl super::CommandHandler for Handler {
                     http,
                     serenity::all::EditInteractionResponse::new().content(format!(
                         "Successfully reloaded scripts and registered {} commands!",
-                        self.command_registry.lock().len()
+                        self.command_registry.lock().unwrap().len()
                     )),
                 )
                 .await?;

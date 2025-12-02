@@ -1,6 +1,5 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use parking_lot::Mutex;
 use serenity::all::{CommandOptionType, CreateCommand, CreateCommandOption};
 
 #[derive(Clone)]
