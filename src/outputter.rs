@@ -11,6 +11,7 @@ pub struct Outputter<'a> {
     user_id: UserId,
     messages: Vec<Message>,
     chunks: Vec<String>,
+    pending_attachments: Vec<CreateAttachment>,
 
     in_terminal_state: bool,
 
@@ -43,6 +44,7 @@ impl<'a> Outputter<'a> {
             user_id: cmd.user.id,
             messages: vec![starting_message],
             chunks: vec![],
+            pending_attachments: vec![],
 
             in_terminal_state: false,
 
@@ -70,21 +72,11 @@ impl<'a> Outputter<'a> {
         Ok(())
     }
 
-    pub async fn add_attachment(&mut self, attachment: Attachment) -> anyhow::Result<()> {
-        if let Some(last) = self.messages.last() {
-            let discord_attachment =
-                CreateAttachment::bytes(attachment.data, attachment.filename.clone());
-            last.channel_id
-                .send_message(
-                    self.http,
-                    CreateMessage::new()
-                        .reference_message(last)
-                        .add_file(discord_attachment)
-                        .allowed_mentions(CreateAllowedMentions::new()),
-                )
-                .await?;
-        }
-        Ok(())
+    pub fn add_attachment(&mut self, attachment: Attachment) {
+        self.pending_attachments.push(CreateAttachment::bytes(
+            attachment.data,
+            attachment.filename,
+        ));
     }
 
     pub async fn error(&mut self, err: &str) -> anyhow::Result<()> {
@@ -103,6 +95,17 @@ impl<'a> Outputter<'a> {
 
         self.in_terminal_state = true;
         self.sync_messages_with_chunks().await?;
+
+        // Add any pending attachments to the last message
+        if !self.pending_attachments.is_empty()
+            && let Some(last) = self.messages.last_mut()
+        {
+            let mut edit = EditMessage::new();
+            for attachment in self.pending_attachments.drain(..) {
+                edit = edit.new_attachment(attachment);
+            }
+            last.edit(self.http, edit).await?;
+        }
 
         Ok(())
     }

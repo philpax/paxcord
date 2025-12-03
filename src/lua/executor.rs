@@ -89,7 +89,7 @@ where
 
             // Handle attachments
             Some(attachment) = attachment_stream.next() => {
-                outputter.add_attachment(attachment).await?;
+                outputter.add_attachment(attachment);
             }
 
             // Handle thread stream
