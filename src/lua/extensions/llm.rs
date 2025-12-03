@@ -65,7 +65,7 @@ pub fn register(lua: &mlua::Lua, ai: Arc<Ai>) -> mlua::Result<()> {
                         let Ok(response) = response else { continue };
                         let Some(content) = response
                             .choices
-                            .get(0)
+                            .first()
                             .and_then(|c| c.delta.content.as_ref())
                         else {
                             continue;
