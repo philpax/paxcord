@@ -10,7 +10,10 @@ use serenity::all::{
 
 use crate::{
     config,
-    lua::{execute_lua_thread, extensions::{Attachment, TemporaryChannelUpdate}},
+    lua::{
+        execute_lua_thread,
+        extensions::{Attachment, TemporaryChannelUpdate},
+    },
 };
 
 pub struct Handler {

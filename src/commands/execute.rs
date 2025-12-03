@@ -10,7 +10,10 @@ use crate::{
     commands::CommandHandler,
     config, constant,
     currency::CurrencyConverter,
-    lua::{create_barebones_lua_state, execute_lua_thread, extensions::Attachment, load_async_expression},
+    lua::{
+        create_barebones_lua_state, execute_lua_thread, extensions::Attachment,
+        load_async_expression,
+    },
     util,
 };
 
