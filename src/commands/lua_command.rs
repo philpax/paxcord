@@ -11,7 +11,7 @@ use serenity::all::{
 use crate::{
     config,
     lua::{
-        execute_lua_thread,
+        LuaOutputChannels, execute_lua_thread,
         extensions::{Attachment, TemporaryChannelUpdate},
     },
 };
@@ -114,9 +114,11 @@ impl super::CommandHandler for Handler {
             cmd,
             &self.discord_config,
             thread,
-            output_rx,
-            print_rx,
-            attachment_rx,
+            LuaOutputChannels {
+                output_rx,
+                print_rx,
+                attachment_rx,
+            },
             None,
         )
         .await

@@ -11,7 +11,7 @@ use crate::{
     config, constant,
     currency::CurrencyConverter,
     lua::{
-        create_barebones_lua_state, execute_lua_thread, extensions::Attachment,
+        LuaOutputChannels, create_barebones_lua_state, execute_lua_thread, extensions::Attachment,
         load_async_expression,
     },
     util,
@@ -108,9 +108,11 @@ impl CommandHandler for Handler {
             cmd,
             &self.discord_config,
             thread,
-            output_rx,
-            print_rx,
-            attachment_rx,
+            LuaOutputChannels {
+                output_rx,
+                print_rx,
+                attachment_rx,
+            },
             Some(self.cancel_rx.clone()),
         )
         .await

@@ -5,7 +5,7 @@ use crate::{ai::Ai, commands::lua_command::LuaCommandRegistry, currency::Currenc
 mod discord_extension;
 
 mod executor;
-pub use executor::execute_lua_thread;
+pub use executor::{LuaOutputChannels, execute_lua_thread};
 
 pub mod extensions;
 
