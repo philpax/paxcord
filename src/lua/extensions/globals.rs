@@ -24,7 +24,7 @@ pub fn register(
 
     lua.globals().set(
         "inspect",
-        lua.load(include_str!("../../../../vendor/inspect.lua/inspect.lua"))
+        lua.load(include_str!("../../../vendor/inspect.lua/inspect.lua"))
             .eval::<mlua::Value>()?,
     )?;
 
@@ -56,11 +56,11 @@ pub fn register(
     Ok(())
 }
 
-pub struct TemporaryChannelUpdate<'a> {
-    lua: &'a mlua::Lua,
+pub struct TemporaryChannelUpdate {
+    lua: mlua::Lua,
     old_channels: Option<OutputChannels>,
 }
-impl<'a> Drop for TemporaryChannelUpdate<'a> {
+impl Drop for TemporaryChannelUpdate {
     fn drop(&mut self) {
         if let Some(old_channels) = self.old_channels.take() {
             self.lua
@@ -69,9 +69,9 @@ impl<'a> Drop for TemporaryChannelUpdate<'a> {
         }
     }
 }
-impl<'a> TemporaryChannelUpdate<'a> {
+impl TemporaryChannelUpdate {
     pub fn new(
-        lua: &'a mlua::Lua,
+        lua: mlua::Lua,
         output_tx: flume::Sender<String>,
         print_tx: flume::Sender<String>,
     ) -> mlua::Result<Self> {

@@ -4,7 +4,6 @@ use crate::ai::Ai;
 use crate::currency::CurrencyConverter;
 
 pub mod currency;
-pub mod discord;
 mod globals;
 mod llm;
 mod perchance;

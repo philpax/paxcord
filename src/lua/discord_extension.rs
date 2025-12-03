@@ -1,9 +1,9 @@
 use mlua::prelude::*;
 use serenity::all::CommandOptionType;
 
-use crate::commands::lua_registry::{CommandRegistry, LuaCommand, LuaCommandOption};
+use crate::commands::lua_command::{LuaCommand, LuaCommandOption, LuaCommandRegistry};
 
-pub fn register(lua: &Lua, registry: CommandRegistry) -> LuaResult<()> {
+pub fn register(lua: &Lua, registry: LuaCommandRegistry) -> LuaResult<()> {
     let discord = lua.create_table()?;
 
     let registry_clone = registry.clone();
