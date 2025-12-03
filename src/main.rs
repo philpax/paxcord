@@ -17,10 +17,13 @@ mod commands;
 mod config;
 mod constant;
 mod currency;
+mod lua;
 mod outputter;
 mod util;
 
 use config::Configuration;
+
+use crate::{commands::lua_command::LuaCommandRegistry, lua::create_global_lua_state};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -35,42 +38,40 @@ async fn main() -> anyhow::Result<()> {
     let currency_converter = Arc::new(currency::CurrencyConverter::new());
 
     let (cancel_tx, cancel_rx) = flume::unbounded::<MessageId>();
-    let handlers: HashMap<String, Box<dyn commands::CommandHandler>> = config
-        .commands
-        .iter()
-        .map(|(name, command)| {
-            Box::new(commands::hallucinate::Handler::new(
-                command.clone(),
-                name.to_string(),
-                config.discord.clone(),
-                cancel_rx.clone(),
-                ai.clone(),
-            )) as Box<dyn commands::CommandHandler>
-        })
-        .chain({
-            let base = commands::execute::Handler::new(
-                config.discord.clone(),
-                cancel_rx.clone(),
-                ai.clone(),
-                currency_converter.clone(),
-            );
-            [
-                Box::new(commands::execute::app::Handler::new(base.clone()))
-                    as Box<dyn commands::CommandHandler>,
-                Box::new(commands::execute::slash::Handler::new(base)),
-            ]
-        })
-        .chain(std::iter::once(Box::new(commands::currency::Handler::new(
-            config.discord.clone(),
-            currency_converter.clone(),
-        ))
-            as Box<dyn commands::CommandHandler>))
-        .map(|handler| (handler.name().to_string(), handler))
-        .collect();
+
+    // Create command registry and global Lua state
+    let command_registry = LuaCommandRegistry::default();
+    // We intentionally do not use _output_rx, as we don't care about temporary output at the global level
+    let (output_tx, _output_rx) = flume::unbounded::<String>();
+    let (print_tx, print_rx) = flume::unbounded::<String>();
+
+    tokio::spawn(async move {
+        while let Ok(print) = print_rx.recv_async().await {
+            println!("Global Lua print: {print}");
+        }
+    });
+
+    let global_lua = create_global_lua_state(
+        ai.clone(),
+        currency_converter.clone(),
+        output_tx,
+        print_tx,
+        command_registry.clone(),
+    )?;
+
+    // Build handlers
+    let handlers = build_handlers(
+        &config,
+        cancel_rx.clone(),
+        ai.clone(),
+        currency_converter.clone(),
+        global_lua.clone(),
+        command_registry.clone(),
+    );
 
     let mut client = Client::builder(discord_token, GatewayIntents::default())
         .event_handler(Handler {
-            handlers,
+            handlers: Arc::new(std::sync::Mutex::new(handlers)),
             cancel_tx,
         })
         .await
@@ -83,8 +84,47 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn build_handlers(
+    config: &Configuration,
+    cancel_rx: flume::Receiver<MessageId>,
+    ai: Arc<ai::Ai>,
+    currency_converter: Arc<currency::CurrencyConverter>,
+    global_lua: mlua::Lua,
+    command_registry: LuaCommandRegistry,
+) -> HashMap<String, Arc<dyn commands::CommandHandler>> {
+    let mut handlers: HashMap<String, Arc<dyn commands::CommandHandler>> = HashMap::new();
+
+    // Add execute command
+    handlers.insert(
+        "execute".to_string(),
+        Arc::new(commands::execute::Handler::new(
+            config.discord.clone(),
+            cancel_rx.clone(),
+            ai.clone(),
+            currency_converter.clone(),
+        )),
+    );
+
+    // Add Lua commands from registry
+    let command_names: Vec<String> = command_registry.lock().unwrap().keys().cloned().collect();
+
+    for name in command_names {
+        handlers.insert(
+            name.clone(),
+            Arc::new(commands::lua_command::Handler::new(
+                name,
+                config.discord.clone(),
+                command_registry.clone(),
+                global_lua.clone(),
+            )),
+        );
+    }
+
+    handlers
+}
+
 pub struct Handler {
-    handlers: HashMap<String, Box<dyn commands::CommandHandler>>,
+    handlers: Arc<std::sync::Mutex<HashMap<String, Arc<dyn commands::CommandHandler>>>>,
     cancel_tx: flume::Sender<MessageId>,
 }
 #[async_trait]
@@ -111,23 +151,8 @@ impl EventHandler for Handler {
 impl Handler {
     async fn ready_impl(&self, http: &Http, ready: Ready) -> anyhow::Result<()> {
         println!("{} is connected; registering commands...", ready.user.name);
-
-        // Check if we need to reset our registered commands
-        let registered_commands: HashSet<_> = {
-            let cmds = Command::get_global_commands(http).await?;
-            cmds.iter().map(|c| c.name.clone()).collect()
-        };
-        let our_commands: HashSet<_> = self.handlers.keys().cloned().collect();
-        if registered_commands != our_commands {
-            Command::set_global_commands(http, vec![]).await?;
-        }
-
-        for handler in self.handlers.values() {
-            handler.register(http).await?;
-        }
-
+        register_all_commands(http, &self.handlers).await?;
         println!("{} is good to go!", ready.user.name);
-
         Ok(())
     }
 
@@ -139,7 +164,9 @@ impl Handler {
         match interaction {
             Interaction::Command(cmd) => {
                 let name = cmd.data.name.as_str();
-                if let Some(handler) = self.handlers.get(name) {
+                let handler = self.handlers.lock().unwrap().get(name).cloned();
+
+                if let Some(handler) = handler {
                     handler.run(http, cmd).await?;
                 } else {
                     anyhow::bail!("no handler found for command: {name}");
@@ -166,4 +193,28 @@ impl Handler {
         };
         Ok(())
     }
+}
+
+/// Registers all commands with Discord, clearing existing commands if they differ
+async fn register_all_commands(
+    http: &Http,
+    handlers: &Arc<std::sync::Mutex<HashMap<String, Arc<dyn commands::CommandHandler>>>>,
+) -> anyhow::Result<()> {
+    // Check if we need to reset our registered commands
+    let registered_commands: HashSet<_> = {
+        let cmds = Command::get_global_commands(http).await?;
+        cmds.iter().map(|c| c.name.clone()).collect()
+    };
+    let our_commands: HashSet<_> = handlers.lock().unwrap().keys().cloned().collect();
+    if registered_commands != our_commands {
+        Command::set_global_commands(http, vec![]).await?;
+    }
+
+    // Collect handlers to avoid holding lock across await
+    let handlers_vec: Vec<_> = handlers.lock().unwrap().values().cloned().collect();
+    for handler in handlers_vec {
+        handler.register(http).await?;
+    }
+
+    Ok(())
 }

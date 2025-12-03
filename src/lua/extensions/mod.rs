@@ -8,6 +8,8 @@ mod globals;
 mod llm;
 mod perchance;
 
+pub use globals::TemporaryChannelUpdate;
+
 pub fn register(
     lua: &mlua::Lua,
     ai: Arc<Ai>,

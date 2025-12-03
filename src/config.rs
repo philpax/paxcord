@@ -1,12 +1,10 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct Configuration {
     pub authentication: Authentication,
-    pub commands: HashMap<String, Command>,
     pub discord: Discord,
 }
 impl Default for Configuration {
@@ -17,14 +15,6 @@ impl Default for Configuration {
                 openai_api_server: None,
                 openai_api_key: None,
             },
-            commands: HashMap::from_iter([(
-                "ask".into(),
-                Command {
-                    enabled: false,
-                    description: "Responds to the provided instruction.".into(),
-                    system_prompt: "You are a helpful assistant.".into(),
-                },
-            )]),
             discord: Discord::default(),
         }
     }
@@ -73,11 +63,4 @@ impl Default for Discord {
             replace_newlines: true,
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Command {
-    pub enabled: bool,
-    pub description: String,
-    pub system_prompt: String,
 }
