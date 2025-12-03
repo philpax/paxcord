@@ -62,10 +62,11 @@ pub fn register(
     )?;
     lua.globals().set(
         "attach",
-        lua.create_function(move |lua, (filename, data): (String, Vec<u8>)| {
+        lua.create_function(move |lua, (filename, data): (String, mlua::String)| {
             let channels_ud: mlua::AnyUserData =
                 lua.named_registry_value(GLOBAL_OUTPUT_CHANNELS_KEY)?;
             let channels = channels_ud.borrow::<OutputChannels>()?;
+            let data = data.as_bytes().to_vec();
             channels.send_attachment(Attachment { filename, data })?;
             Ok(())
         })?,
