@@ -63,10 +63,6 @@ impl super::CommandHandler for Handler {
         // Lock the global Lua state for this execution (held for entire duration)
         let lua = &self.global_lua;
 
-        // Update output channels for this execution
-        let _temporary_channel_update =
-            TemporaryChannelUpdate::new(lua.clone(), output_tx, print_tx, attachment_tx)?;
-
         // Build interaction table
         let interaction = lua.create_table()?;
         let options = lua.create_table()?;
@@ -104,8 +100,14 @@ impl super::CommandHandler for Handler {
             .handler
             .clone();
 
-        // Wrap the handler call in a coroutine
+        // Create the thread FIRST, then register channels for this specific thread
         let thread = lua.create_thread(handler)?;
+
+        // Register output channels for THIS thread (keyed by thread pointer)
+        let _temporary_channel_update =
+            TemporaryChannelUpdate::new(lua.clone(), &thread, output_tx, print_tx, attachment_tx)?;
+
+        // Convert to async thread
         let thread = thread.into_async::<()>(interaction)?;
 
         // Execute the Lua thread using the shared executor (no cancellation support)
