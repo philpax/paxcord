@@ -5,6 +5,15 @@ use std::{
 
 use serenity::all::{CommandOptionType, CreateCommand, CreateCommandOption};
 
+pub type CommandRegistry = Arc<Mutex<HashMap<String, LuaCommand>>>;
+
+// LuaCommand stores command metadata and handler function reference
+pub struct LuaCommand {
+    pub name: String,
+    pub description: String,
+    pub options: Vec<LuaCommandOption>,
+    pub handler: mlua::Function,
+}
 #[derive(Clone)]
 pub struct LuaCommandOption {
     pub name: String,
@@ -18,21 +27,6 @@ pub struct LuaCommandOption {
     pub autocomplete: bool,
     pub choices: Vec<(String, String)>, // (name, value) for string choices
 }
-
-// LuaCommand stores command metadata and handler function reference
-pub struct LuaCommand {
-    pub name: String,
-    pub description: String,
-    pub options: Vec<LuaCommandOption>,
-    pub handler: mlua::RegistryKey, // Function stored in Lua registry
-}
-
-pub type CommandRegistry = Arc<Mutex<HashMap<String, LuaCommand>>>;
-
-pub fn create_registry() -> CommandRegistry {
-    Arc::new(Mutex::new(HashMap::new()))
-}
-
 impl LuaCommand {
     pub fn to_discord_command(&self) -> CreateCommand {
         let mut cmd = CreateCommand::new(&self.name).description(&self.description);

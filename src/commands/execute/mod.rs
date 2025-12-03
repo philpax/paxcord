@@ -1,11 +1,8 @@
 use std::sync::Arc;
 
-use serenity::{
-    all::{CommandInteraction, Http, MessageId},
-    futures::StreamExt as _,
-};
+use serenity::all::{CommandInteraction, Http, MessageId};
 
-use crate::{ai::Ai, config, currency::CurrencyConverter, outputter::Outputter};
+use crate::{ai::Ai, config, currency::CurrencyConverter};
 
 pub mod extensions;
 pub mod slash;
@@ -38,15 +35,6 @@ impl Handler {
         cmd: &CommandInteraction,
         unparsed_code: &str,
     ) -> anyhow::Result<()> {
-        let mut outputter = Outputter::new(
-            http,
-            cmd,
-            std::time::Duration::from_millis(self.discord_config.message_update_interval_ms),
-            "Executing...",
-        )
-        .await?;
-        let starting_message_id = outputter.starting_message_id();
-
         let code = parse_markdown_lua_block(unparsed_code).unwrap_or(unparsed_code);
 
         let (output_tx, output_rx) = flume::unbounded::<String>();
@@ -58,91 +46,19 @@ impl Handler {
             output_tx,
             print_tx,
         )?;
-        let mut thread = load_async_expression::<Option<String>>(&lua, code)?;
+        let thread = load_async_expression::<Option<String>>(&lua, code)?;
 
-        struct Output {
-            output: String,
-            print_log: Vec<String>,
-        }
-        impl Output {
-            pub fn to_final_output(&self) -> String {
-                let mut output = self.output.clone();
-                if !self.print_log.is_empty() {
-                    output.push_str("\n**Print Log**\n");
-                    for print in self.print_log.iter() {
-                        output.push_str(print);
-                        output.push('\n');
-                    }
-                }
-                output
-            }
-        }
-        let mut output = Output {
-            output: String::new(),
-            print_log: vec![],
-        };
-
-        let mut errored = false;
-        let mut cancel_stream = self.cancel_rx.stream();
-        let mut output_stream = output_rx.stream();
-        let mut print_stream = print_rx.stream();
-
-        loop {
-            tokio::select! {
-                biased;
-
-                // Check for cancellation (highest priority)
-                Some(cancel_message_id) = cancel_stream.next() => {
-                    if cancel_message_id == starting_message_id {
-                        outputter.cancelled().await?;
-                        errored = true;
-                        break;
-                    }
-                    break;
-                }
-
-                // Handle values from output stream
-                Some(value) = output_stream.next() => {
-                    output.output = value;
-                    outputter.update(&output.to_final_output()).await?;
-                }
-
-                // Handle values from print stream
-                Some(value) = print_stream.next() => {
-                    output.print_log.push(value);
-                    outputter.update(&output.to_final_output()).await?;
-                }
-
-                // Handle thread stream
-                thread_result = thread.next() => {
-                    match thread_result {
-                        Some(Ok(result)) => {
-                            if let Some(result) = result {
-                                output.output = result;
-                                outputter.update(&output.to_final_output()).await?;
-                            } else {
-                                outputter.update(&output.to_final_output()).await?;
-                            }
-                        }
-                        Some(Err(err)) => {
-                            outputter.error(&err.to_string()).await?;
-                            errored = true;
-                            break;
-                        }
-                        None => {
-                            // Thread stream exhausted
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        if !errored {
-            outputter.finish().await?;
-        }
-
-        Ok(())
+        // Execute the Lua thread using the shared executor (with cancellation support)
+        super::lua_executor::execute_lua_thread(
+            http,
+            cmd,
+            &self.discord_config,
+            thread,
+            output_rx,
+            print_rx,
+            Some(self.cancel_rx.clone()),
+        )
+        .await
     }
 }
 
@@ -150,7 +66,7 @@ fn load_lua_file(lua: &mlua::Lua, path: &str) -> mlua::Result<()> {
     let script_path = std::path::Path::new(path);
     if script_path.exists() {
         let code = std::fs::read_to_string(script_path)
-            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to read {}: {}", path, e)))?;
+            .map_err(|e| mlua::Error::RuntimeError(format!("Failed to read {path}: {e}")))?;
         lua.load(&code).set_name(path).exec()?;
     }
     Ok(())

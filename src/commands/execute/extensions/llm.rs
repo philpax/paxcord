@@ -181,7 +181,7 @@ fn register_message(lua: &mlua::Lua, table: &mlua::Table, role: &str) -> mlua::R
                 if let Ok(name) = table.get::<String>("name") {
                     output.set("name", name)?;
                 }
-            } else if let Some(text) = value.as_str() {
+            } else if let Some(text) = value.as_string() {
                 output.set("content", text)?;
             }
 

@@ -38,9 +38,16 @@ async fn main() -> anyhow::Result<()> {
     let (reload_tx, reload_rx) = flume::unbounded::<()>();
 
     // Create command registry and global Lua state
-    let command_registry = commands::lua_registry::create_registry();
+    let command_registry = commands::lua_registry::CommandRegistry::default();
+    // We intentionally do not use _output_rx, as we don't care about temporary output at the global level
     let (output_tx, _output_rx) = flume::unbounded::<String>();
-    let (print_tx, _print_rx) = flume::unbounded::<String>();
+    let (print_tx, print_rx) = flume::unbounded::<String>();
+
+    tokio::spawn(async move {
+        while let Ok(print) = print_rx.recv_async().await {
+            println!("Global Lua print: {print}");
+        }
+    });
 
     let global_lua = Arc::new(tokio::sync::Mutex::new(
         commands::execute::create_global_lua_state(

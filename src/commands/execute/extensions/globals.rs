@@ -1,4 +1,6 @@
-use super::output_userdata::OutputChannels;
+use std::sync::Arc;
+
+const GLOBAL_OUTPUT_CHANNELS_KEY: &str = "_output_channels";
 
 pub fn register(
     lua: &mlua::Lua,
@@ -26,29 +28,24 @@ pub fn register(
             .eval::<mlua::Value>()?,
     )?;
 
-    // Create output channels userdata
     let channels = OutputChannels::new(output_tx, print_tx);
-
-    // Store channels in registry for later updates
-    lua.set_named_registry_value("_output_channels", channels.clone())?;
-
-    // Create output() function that uses the userdata
+    lua.set_named_registry_value(GLOBAL_OUTPUT_CHANNELS_KEY, channels)?;
     lua.globals().set(
         "output",
-        lua.create_function(move |_lua, values: mlua::Variadic<String>| {
-            let channels_ud: mlua::AnyUserData = _lua.named_registry_value("_output_channels")?;
+        lua.create_function(move |lua, values: mlua::Variadic<String>| {
+            let channels_ud: mlua::AnyUserData =
+                lua.named_registry_value(GLOBAL_OUTPUT_CHANNELS_KEY)?;
             let channels = channels_ud.borrow::<OutputChannels>()?;
             let output = values.into_iter().collect::<Vec<_>>().join("\t");
             channels.send_output(output.clone())?;
             Ok(output)
         })?,
     )?;
-
-    // Create print() function that uses the userdata
     lua.globals().set(
         "print",
-        lua.create_function(move |_lua, values: mlua::Variadic<String>| {
-            let channels_ud: mlua::AnyUserData = _lua.named_registry_value("_output_channels")?;
+        lua.create_function(move |lua, values: mlua::Variadic<String>| {
+            let channels_ud: mlua::AnyUserData =
+                lua.named_registry_value(GLOBAL_OUTPUT_CHANNELS_KEY)?;
             let channels = channels_ud.borrow::<OutputChannels>()?;
             let output = values.into_iter().collect::<Vec<_>>().join("\t");
             channels.send_print(output.clone())?;
@@ -59,14 +56,65 @@ pub fn register(
     Ok(())
 }
 
-/// Update the output channels for execution-scoped output
-pub fn update_channels(
-    lua: &mlua::Lua,
-    output_tx: flume::Sender<String>,
-    print_tx: flume::Sender<String>,
-) -> mlua::Result<()> {
-    let channels_ud: mlua::AnyUserData = lua.named_registry_value("_output_channels")?;
-    let channels = channels_ud.borrow::<OutputChannels>()?;
-    channels.update(output_tx, print_tx);
-    Ok(())
+pub struct TemporaryChannelUpdate<'a> {
+    lua: &'a mlua::Lua,
+    old_channels: Option<OutputChannels>,
+}
+impl<'a> Drop for TemporaryChannelUpdate<'a> {
+    fn drop(&mut self) {
+        if let Some(old_channels) = self.old_channels.take() {
+            self.lua
+                .set_named_registry_value(GLOBAL_OUTPUT_CHANNELS_KEY, old_channels)
+                .ok();
+        }
+    }
+}
+impl<'a> TemporaryChannelUpdate<'a> {
+    pub fn new(
+        lua: &'a mlua::Lua,
+        output_tx: flume::Sender<String>,
+        print_tx: flume::Sender<String>,
+    ) -> mlua::Result<Self> {
+        let channels_ud: mlua::AnyUserData =
+            lua.named_registry_value(GLOBAL_OUTPUT_CHANNELS_KEY)?;
+        let mut channels = channels_ud.borrow_mut::<OutputChannels>()?;
+        let old_channels = channels.clone();
+
+        *channels = OutputChannels::new(output_tx, print_tx);
+        Ok(Self {
+            lua,
+            old_channels: Some(old_channels),
+        })
+    }
+}
+/// Userdata containing output and print channels that can be updated
+#[derive(Clone)]
+struct OutputChannels {
+    pub output_tx: Option<flume::Sender<String>>,
+    pub print_tx: Option<flume::Sender<String>>,
+}
+impl mlua::UserData for OutputChannels {}
+impl OutputChannels {
+    pub fn new(output_tx: flume::Sender<String>, print_tx: flume::Sender<String>) -> Self {
+        Self {
+            output_tx: Some(output_tx),
+            print_tx: Some(print_tx),
+        }
+    }
+
+    pub fn send_output(&self, msg: String) -> mlua::Result<()> {
+        if let Some(tx) = self.output_tx.as_ref() {
+            tx.send(msg)
+                .map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
+        }
+        Ok(())
+    }
+
+    pub fn send_print(&self, msg: String) -> mlua::Result<()> {
+        if let Some(tx) = self.print_tx.as_ref() {
+            tx.send(msg)
+                .map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
+        }
+        Ok(())
+    }
 }

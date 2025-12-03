@@ -7,8 +7,9 @@ pub mod currency;
 pub mod discord;
 mod globals;
 mod llm;
-mod output_userdata;
 mod perchance;
+
+pub use globals::TemporaryChannelUpdate;
 
 pub fn register(
     lua: &mlua::Lua,
@@ -22,12 +23,4 @@ pub fn register(
     perchance::register(lua)?;
     currency::register(lua, currency_converter)?;
     Ok(())
-}
-
-pub fn update_output_channels(
-    lua: &mlua::Lua,
-    output_tx: flume::Sender<String>,
-    print_tx: flume::Sender<String>,
-) -> mlua::Result<()> {
-    globals::update_channels(lua, output_tx, print_tx)
 }
