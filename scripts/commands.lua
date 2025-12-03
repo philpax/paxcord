@@ -177,6 +177,56 @@ discord.register_command {
 	end,
 }
 
+-- Shared function to generate images using SDXL
+local function generate_sdxl_image(prompt, negative, seed)
+	output("Connecting to ComfyUI...")
+
+	-- Get client and object info (lazily cached)
+	local client = get_comfy_client()
+	local object_info = get_comfy_object_info()
+
+	output("Building workflow...")
+
+	-- Create the graph
+	local g = comfy.graph(object_info)
+
+	-- Build the SDXL workflow
+	local c = g:CheckpointLoaderSimple("sd_xl_base_1.0.safetensors")
+	local preview = g:PreviewImage(g:VAEDecode {
+		vae = c.vae,
+		samples = g:KSampler {
+			model = c.model,
+			seed = seed,
+			steps = 20,
+			cfg = 8.0,
+			sampler_name = "euler",
+			scheduler = "normal",
+			positive = g:CLIPTextEncode { text = prompt, clip = c.clip },
+			negative = g:CLIPTextEncode { text = negative, clip = c.clip },
+			latent_image = g:EmptyLatentImage { width = 1024, height = 1024, batch_size = 1 },
+			denoise = 1.0,
+		},
+	})
+
+	output("Generating image (seed: " .. seed .. ")...")
+
+	-- Queue the workflow and wait for results
+	local result = client:easy_queue(g)
+
+	-- Get the images from the preview node
+	local images = result[preview].images
+
+	if #images > 0 then
+		-- Attach each generated image
+		for i, image_data in ipairs(images) do
+			attach("image_" .. seed .. "_" .. i .. ".png", image_data)
+		end
+		output("Prompt: " .. prompt .. " | Seed: " .. seed)
+	else
+		output("No images were generated.")
+	end
+end
+
 -- Register the /paintsdxl command
 discord.register_command {
 	name = "paintsdxl",
@@ -208,53 +258,43 @@ discord.register_command {
 		local negative = interaction.options.negative or "text, watermark, blurry"
 		local seed = interaction.options.seed or math.random(0, 2147483647)
 
-		output("Connecting to ComfyUI...")
+		generate_sdxl_image(prompt, negative, seed)
+	end,
+}
 
-		-- Get client and object info (lazily cached)
-		local client = get_comfy_client()
-		local object_info = get_comfy_object_info()
+-- Register the /paintperchance command
+discord.register_command {
+	name = "paintperchance",
+	description = "Generate an image using a random prompt from Perchance and Stable Diffusion XL",
+	options = {
+		{
+			name = "negative",
+			description = "Negative prompt (default: 'text, watermark, blurry')",
+			type = "string",
+			required = false,
+		},
+		{
+			name = "seed",
+			description = "Random seed for deterministic output (default: random)",
+			type = "integer",
+			required = false,
+			min_value = 0,
+			max_value = 2147483647,
+		},
+	},
+	execute = function(interaction)
+		local negative = interaction.options.negative or "text, watermark, blurry"
+		local seed = interaction.options.seed or math.random(0, 2147483647)
 
-		output("Building workflow...")
+		output("Generating prompt...")
 
-		-- Create the graph
-		local g = comfy.graph(object_info)
+		-- Generate a random prompt using Perchance
+		local generator = "output = {import:prompt_generator}"
+		local prompt = perchance.run(generator, seed)
 
-		-- Build the SDXL workflow
-		local c = g:CheckpointLoaderSimple("sd_xl_base_1.0.safetensors")
-		local preview = g:PreviewImage(
-			g:VAEDecode {
-				vae = c.vae,
-				samples = g:KSampler {
-					model = c.model,
-					seed = seed,
-					steps = 20,
-					cfg = 8.0,
-					sampler_name = "euler",
-					scheduler = "normal",
-					positive = g:CLIPTextEncode { text = prompt, clip = c.clip },
-					negative = g:CLIPTextEncode { text = negative, clip = c.clip },
-					latent_image = g:EmptyLatentImage { width = 1024, height = 1024, batch_size = 1 },
-					denoise = 1.0,
-				},
-			}
-		)
+		output("Generated prompt: " .. prompt)
 
-		output("Generating image (seed: " .. seed .. ")...")
-
-		-- Queue the workflow and wait for results
-		local result = client:easy_queue(g)
-
-		-- Get the images from the preview node
-		local images = result[preview].images
-
-		if #images > 0 then
-			-- Attach each generated image
-			for i, image_data in ipairs(images) do
-				attach("image_" .. seed .. "_" .. i .. ".png", image_data)
-			end
-			output("Generated " .. #images .. " image(s)!\n\n-# Prompt: " .. prompt .. " | Seed: " .. seed)
-		else
-			output("No images were generated.")
-		end
+		-- Generate the image using the generated prompt
+		generate_sdxl_image(prompt, negative, seed)
 	end,
 }
