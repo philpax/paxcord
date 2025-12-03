@@ -1,8 +1,8 @@
 -- scripts/commands.lua
 -- Discord command definitions using the discord.register_command API
 
--- Currency choices for the convert command
-local currencies = {
+-- Currency data and choices for the convert command
+local currency_data = {
 	{ "USD", "US Dollar" },
 	{ "EUR", "Euro" },
 	{ "SEK", "Swedish Krona" },
@@ -29,34 +29,16 @@ local currencies = {
 	{ "DKK", "Danish Krone" },
 	{ "IDR", "Indonesian Rupiah" },
 }
-
--- Helper to create currency choices for command options
-local function make_currency_choices()
-	local choices = {}
-	for _, currency in ipairs(currencies) do
-		local code, name = currency[1], currency[2]
-		table.insert(choices, {
-			name = code .. " (" .. name .. ")",
-			value = code,
-		})
-	end
-	return choices
-end
-
--- Helper to create model choices from llm.models
-local function make_model_choices()
-	local choices = {}
-	for _, model in ipairs(llm.models) do
-		table.insert(choices, {
-			name = model,
-			value = model,
-		})
-	end
-	return choices
-end
+local currency_choices = map(currency_data, function(currency)
+	local code, name = currency[1], currency[2]
+	return {
+		name = code .. " (" .. name .. ")",
+		value = code,
+	}
+end)
 
 -- Register the /ask command (default hallucinate command)
-discord.register_command({
+discord.register_command {
 	name = "ask",
 	description = "Responds to the provided instruction",
 	options = {
@@ -65,7 +47,12 @@ discord.register_command({
 			description = "The model to use",
 			type = "string",
 			required = true,
-			choices = make_model_choices(),
+			choices = map(llm.models, function(model)
+				return {
+					name = model,
+					value = model,
+				}
+			end),
 		},
 		{
 			name = "prompt",
@@ -94,14 +81,14 @@ discord.register_command({
 			llm.user(prompt),
 		}
 
-		local response = stream_llm_response(messages, model, seed)
+		local response = string.trim(stream_llm_response(messages, model, seed))
 
 		output(response .. "\n\n-# Model: " .. model .. (seed and (" | Seed: " .. seed) or ""))
 	end,
-})
+}
 
 -- Register the /convert command
-discord.register_command({
+discord.register_command {
 	name = "convert",
 	description = "Convert between currencies using live exchange rates",
 	options = {
@@ -117,14 +104,14 @@ discord.register_command({
 			description = "The currency to convert from",
 			type = "string",
 			required = true,
-			choices = make_currency_choices(),
+			choices = currency_choices,
 		},
 		{
 			name = "to",
 			description = "The currency to convert to",
 			type = "string",
 			required = true,
-			choices = make_currency_choices(),
+			choices = currency_choices,
 		},
 	},
 	execute = function(interaction)
@@ -134,26 +121,18 @@ discord.register_command({
 
 		output("Converting...")
 
-		local converted = currency.convert(from, to, amount)
-
-		if converted then
-			local rate = converted / amount
-			output(
-				string.format(
-					"**%.2f %s** = **%.2f %s**\n-# Exchange rate: 1 %s = %.6f %s",
-					amount,
-					from,
-					converted,
-					to,
-					from,
-					rate,
-					to
-				)
-			)
-		else
-			output("Failed to convert currency")
-		end
+		local converted = currency.convert(amount, from, to)
+		local rate = converted / amount
+		local s = string.format(
+			"**%.2f %s** = **%.2f %s**\n-# Exchange rate: 1 %s = %.6f %s",
+			amount,
+			from,
+			converted,
+			to,
+			from,
+			rate,
+			to
+		)
+		output(s)
 	end,
-})
-
-print("Commands registered successfully!")
+}
