@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::ai::Ai;
 use crate::currency::CurrencyConverter;
 
+mod comfyui;
 pub mod currency;
 mod globals;
 mod llm;
@@ -21,5 +22,6 @@ pub fn register(
     llm::register(lua, ai)?;
     perchance::register(lua)?;
     currency::register(lua, currency_converter)?;
+    comfyui::register(lua)?;
     Ok(())
 }

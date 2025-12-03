@@ -176,3 +176,47 @@ discord.register_command {
 		end
 	end,
 }
+
+-- Register the /paintsdxl command
+discord.register_command {
+	name = "paintsdxl",
+	description = "Generate an image using Stable Diffusion XL via ComfyUI",
+	options = {
+		{
+			name = "prompt",
+			description = "The prompt describing the image to generate",
+			type = "string",
+			required = true,
+		},
+		{
+			name = "negative",
+			description = "Negative prompt (default: 'text, watermark, blurry')",
+			type = "string",
+			required = false,
+		},
+		{
+			name = "seed",
+			description = "Random seed for deterministic output (default: random)",
+			type = "integer",
+			required = false,
+			min_value = 0,
+			max_value = 2147483647,
+		},
+	},
+	execute = function(interaction)
+		local prompt = interaction.options.prompt
+		local negative = interaction.options.negative
+		local seed = interaction.options.seed
+
+		output("Connecting to ComfyUI and generating image...")
+
+		-- Generate the image using the SDXL workflow
+		local result = comfy.paintsdxl(prompt, negative, seed)
+
+		if result.image_count > 0 then
+			output("Generated " .. result.image_count .. " image(s)!\n\n-# Prompt: " .. prompt)
+		else
+			output("No images were generated.")
+		end
+	end,
+}
