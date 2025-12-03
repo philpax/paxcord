@@ -14,6 +14,7 @@ pub fn create_barebones_lua_state(
     currency_converter: Arc<CurrencyConverter>,
     output_tx: flume::Sender<String>,
     print_tx: flume::Sender<String>,
+    attachment_tx: flume::Sender<extensions::Attachment>,
 ) -> mlua::Result<mlua::Lua> {
     let lua = mlua::Lua::new_with(
         {
@@ -23,7 +24,7 @@ pub fn create_barebones_lua_state(
         mlua::LuaOptions::new().catch_rust_panics(true),
     )?;
 
-    extensions::register(&lua, ai, currency_converter, output_tx, print_tx)?;
+    extensions::register(&lua, ai, currency_converter, output_tx, print_tx, attachment_tx)?;
     load_lua_file(&lua, "scripts/main.lua")?;
 
     Ok(lua)
@@ -34,9 +35,10 @@ pub fn create_global_lua_state(
     currency_converter: Arc<CurrencyConverter>,
     output_tx: flume::Sender<String>,
     print_tx: flume::Sender<String>,
+    attachment_tx: flume::Sender<extensions::Attachment>,
     lua_command_registry: LuaCommandRegistry,
 ) -> mlua::Result<mlua::Lua> {
-    let lua = create_barebones_lua_state(ai, currency_converter, output_tx, print_tx)?;
+    let lua = create_barebones_lua_state(ai, currency_converter, output_tx, print_tx, attachment_tx)?;
     discord_extension::register(&lua, lua_command_registry)?;
     load_lua_file(&lua, "scripts/commands.lua")?;
 

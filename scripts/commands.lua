@@ -211,8 +211,8 @@ discord.register_command {
 		output("Connecting to ComfyUI...")
 
 		-- Get client and object info (lazily cached)
-		local client = comfy.client()
-		local object_info = comfy.object_info()
+		local client = get_comfy_client()
+		local object_info = get_comfy_object_info()
 
 		output("Building workflow...")
 
@@ -248,6 +248,10 @@ discord.register_command {
 		local images = result[preview].images
 
 		if #images > 0 then
+			-- Attach each generated image
+			for i, image_data in ipairs(images) do
+				attach("image_" .. seed .. "_" .. i .. ".png", image_data)
+			end
 			output("Generated " .. #images .. " image(s)!\n\n-# Prompt: " .. prompt .. " | Seed: " .. seed)
 		else
 			output("No images were generated.")

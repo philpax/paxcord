@@ -1,7 +1,9 @@
 use serenity::all::{
-    CommandInteraction, CreateAllowedMentions, CreateInteractionResponse,
+    CommandInteraction, CreateAllowedMentions, CreateAttachment, CreateInteractionResponse,
     CreateInteractionResponseMessage, CreateMessage, EditMessage, Http, Message, MessageId, UserId,
 };
+
+use crate::lua::extensions::Attachment;
 
 pub struct Outputter<'a> {
     http: &'a Http,
@@ -65,6 +67,23 @@ impl<'a> Outputter<'a> {
             self.last_update = std::time::Instant::now();
         }
 
+        Ok(())
+    }
+
+    pub async fn add_attachment(&mut self, attachment: Attachment) -> anyhow::Result<()> {
+        if let Some(last) = self.messages.last() {
+            let discord_attachment =
+                CreateAttachment::bytes(attachment.data, attachment.filename.clone());
+            last.channel_id
+                .send_message(
+                    self.http,
+                    CreateMessage::new()
+                        .reference_message(last)
+                        .add_file(discord_attachment)
+                        .allowed_mentions(CreateAllowedMentions::new()),
+                )
+                .await?;
+        }
         Ok(())
     }
 

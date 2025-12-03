@@ -10,7 +10,7 @@ use crate::{
     commands::CommandHandler,
     config, constant,
     currency::CurrencyConverter,
-    lua::{create_barebones_lua_state, execute_lua_thread, load_async_expression},
+    lua::{create_barebones_lua_state, execute_lua_thread, extensions::Attachment, load_async_expression},
     util,
 };
 
@@ -88,12 +88,14 @@ impl CommandHandler for Handler {
 
         let (output_tx, output_rx) = flume::unbounded::<String>();
         let (print_tx, print_rx) = flume::unbounded::<String>();
+        let (attachment_tx, attachment_rx) = flume::unbounded::<Attachment>();
 
         let lua = create_barebones_lua_state(
             self.ai.clone(),
             self.currency_converter.clone(),
             output_tx,
             print_tx,
+            attachment_tx,
         )?;
         let thread = load_async_expression::<Option<String>>(&lua, code)?;
 
@@ -105,6 +107,7 @@ impl CommandHandler for Handler {
             thread,
             output_rx,
             print_rx,
+            attachment_rx,
             Some(self.cancel_rx.clone()),
         )
         .await

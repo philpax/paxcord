@@ -41,9 +41,10 @@ async fn main() -> anyhow::Result<()> {
 
     // Create command registry and global Lua state
     let command_registry = LuaCommandRegistry::default();
-    // We intentionally do not use _output_rx, as we don't care about temporary output at the global level
+    // We intentionally do not use _output_rx/_attachment_rx, as we don't care about temporary output at the global level
     let (output_tx, _output_rx) = flume::unbounded::<String>();
     let (print_tx, print_rx) = flume::unbounded::<String>();
+    let (attachment_tx, _attachment_rx) = flume::unbounded::<lua::extensions::Attachment>();
 
     tokio::spawn(async move {
         while let Ok(print) = print_rx.recv_async().await {
@@ -56,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
         currency_converter.clone(),
         output_tx,
         print_tx,
+        attachment_tx,
         command_registry.clone(),
     )?;
 
