@@ -136,3 +136,43 @@ discord.register_command {
 		output(s)
 	end,
 }
+
+-- Register the /perchanceprompt command
+discord.register_command {
+	name = "perchanceprompt",
+	description = "Generate random image prompts using https://perchance.org/image-synthesis-prompt-generator",
+	options = {
+		{
+			name = "count",
+			description = "Number of prompts to generate (default: 1)",
+			type = "integer",
+			required = false,
+			min_value = 1,
+			max_value = 10,
+		},
+		{
+			name = "seed",
+			description = "Random seed for deterministic output",
+			type = "integer",
+			required = false,
+			min_value = 0,
+			max_value = 4294967295, -- 2^32 - 1 (u32 max)
+		},
+	},
+	execute = function(interaction)
+		local count = interaction.options.count or 1
+		local seed = interaction.options.seed or math.random(1, 2147483647) -- Use i32 max for Lua compatibility
+
+		local generator = "output = {import:prompt_generator}"
+
+		if count == 1 then
+			local result = perchance.run(generator, seed)
+			print(result)
+		else
+			for i = 0, count - 1 do
+				local result = perchance.run(generator, seed + i)
+				print((i + 1) .. ". " .. result)
+			end
+		end
+	end,
+}
