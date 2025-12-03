@@ -63,7 +63,11 @@ pub fn register(lua: &mlua::Lua, ai: Arc<Ai>) -> mlua::Result<()> {
 
                     while let Some(response) = stream.next().await {
                         let Ok(response) = response else { continue };
-                        let Some(content) = &response.choices[0].delta.content else {
+                        let Some(content) = response
+                            .choices
+                            .get(0)
+                            .and_then(|c| c.delta.content.as_ref())
+                        else {
                             continue;
                         };
                         output.push_str(content);
