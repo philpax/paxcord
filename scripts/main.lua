@@ -132,3 +132,22 @@ function stream_llm_response(messages, model, seed)
 
 	return full_response
 end
+
+-- ComfyUI lazy loading helpers
+local comfy_client = nil
+local comfy_object_info = nil
+
+function get_comfy_client()
+	if not comfy_client then
+		comfy_client = comfy.client("http://127.0.0.1:8188")
+	end
+	return comfy_client
+end
+
+function get_comfy_object_info()
+	if not comfy_object_info then
+		local client = get_comfy_client()
+		comfy_object_info = client:get_object_info()
+	end
+	return comfy_object_info
+end

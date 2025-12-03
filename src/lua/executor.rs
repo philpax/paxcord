@@ -3,7 +3,14 @@ use serenity::{
     futures::StreamExt as _,
 };
 
-use crate::{config, outputter::Outputter};
+use crate::{config, lua::extensions::Attachment, outputter::Outputter};
+
+/// Channels for receiving output from Lua execution
+pub struct LuaOutputChannels {
+    pub output_rx: flume::Receiver<String>,
+    pub print_rx: flume::Receiver<String>,
+    pub attachment_rx: flume::Receiver<Attachment>,
+}
 
 /// Executes a Lua async thread with output handling and optional cancellation support.
 pub async fn execute_lua_thread<R>(
@@ -11,8 +18,7 @@ pub async fn execute_lua_thread<R>(
     cmd: &CommandInteraction,
     discord_config: &config::Discord,
     mut thread: mlua::AsyncThread<R>,
-    output_rx: flume::Receiver<String>,
-    print_rx: flume::Receiver<String>,
+    channels: LuaOutputChannels,
     mut cancel_rx: Option<flume::Receiver<MessageId>>,
 ) -> anyhow::Result<()>
 where
@@ -49,8 +55,9 @@ where
     };
 
     let mut errored = false;
-    let mut output_stream = output_rx.stream();
-    let mut print_stream = print_rx.stream();
+    let mut output_stream = channels.output_rx.stream();
+    let mut print_stream = channels.print_rx.stream();
+    let mut attachment_stream = channels.attachment_rx.stream();
 
     let starting_message_id = outputter.starting_message_id();
 
@@ -78,6 +85,11 @@ where
             Some(value) = print_stream.next() => {
                 output.print_log.push(value);
                 outputter.update(&output.to_final_output()).await?;
+            }
+
+            // Handle attachments
+            Some(attachment) = attachment_stream.next() => {
+                outputter.add_attachment(attachment);
             }
 
             // Handle thread stream

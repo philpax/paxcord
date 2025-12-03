@@ -2,10 +2,18 @@ use std::sync::Arc;
 
 const GLOBAL_OUTPUT_CHANNELS_KEY: &str = "_output_channels";
 
+/// An attachment with filename and binary data
+#[derive(Clone)]
+pub struct Attachment {
+    pub filename: String,
+    pub data: Vec<u8>,
+}
+
 pub fn register(
     lua: &mlua::Lua,
     output_tx: flume::Sender<String>,
     print_tx: flume::Sender<String>,
+    attachment_tx: flume::Sender<Attachment>,
 ) -> mlua::Result<()> {
     lua.globals().set(
         "sleep",
@@ -28,7 +36,7 @@ pub fn register(
             .eval::<mlua::Value>()?,
     )?;
 
-    let channels = OutputChannels::new(output_tx, print_tx);
+    let channels = OutputChannels::new(output_tx, print_tx, attachment_tx);
     lua.set_named_registry_value(GLOBAL_OUTPUT_CHANNELS_KEY, channels)?;
     lua.globals().set(
         "output",
@@ -50,6 +58,17 @@ pub fn register(
             let output = values.into_iter().collect::<Vec<_>>().join("\t");
             channels.send_print(output.clone())?;
             Ok(output)
+        })?,
+    )?;
+    lua.globals().set(
+        "attach",
+        lua.create_function(move |lua, (filename, data): (String, mlua::String)| {
+            let channels_ud: mlua::AnyUserData =
+                lua.named_registry_value(GLOBAL_OUTPUT_CHANNELS_KEY)?;
+            let channels = channels_ud.borrow::<OutputChannels>()?;
+            let data = data.as_bytes().to_vec();
+            channels.send_attachment(Attachment { filename, data })?;
+            Ok(())
         })?,
     )?;
 
@@ -74,13 +93,14 @@ impl TemporaryChannelUpdate {
         lua: mlua::Lua,
         output_tx: flume::Sender<String>,
         print_tx: flume::Sender<String>,
+        attachment_tx: flume::Sender<Attachment>,
     ) -> mlua::Result<Self> {
         let channels_ud: mlua::AnyUserData =
             lua.named_registry_value(GLOBAL_OUTPUT_CHANNELS_KEY)?;
         let mut channels = channels_ud.borrow_mut::<OutputChannels>()?;
         let old_channels = channels.clone();
 
-        *channels = OutputChannels::new(output_tx, print_tx);
+        *channels = OutputChannels::new(output_tx, print_tx, attachment_tx);
         Ok(Self {
             lua,
             old_channels: Some(old_channels),
@@ -92,13 +112,19 @@ impl TemporaryChannelUpdate {
 struct OutputChannels {
     pub output_tx: Option<flume::Sender<String>>,
     pub print_tx: Option<flume::Sender<String>>,
+    pub attachment_tx: Option<flume::Sender<Attachment>>,
 }
 impl mlua::UserData for OutputChannels {}
 impl OutputChannels {
-    pub fn new(output_tx: flume::Sender<String>, print_tx: flume::Sender<String>) -> Self {
+    pub fn new(
+        output_tx: flume::Sender<String>,
+        print_tx: flume::Sender<String>,
+        attachment_tx: flume::Sender<Attachment>,
+    ) -> Self {
         Self {
             output_tx: Some(output_tx),
             print_tx: Some(print_tx),
+            attachment_tx: Some(attachment_tx),
         }
     }
 
@@ -113,6 +139,14 @@ impl OutputChannels {
     pub fn send_print(&self, msg: String) -> mlua::Result<()> {
         if let Some(tx) = self.print_tx.as_ref() {
             tx.send(msg)
+                .map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
+        }
+        Ok(())
+    }
+
+    pub fn send_attachment(&self, attachment: Attachment) -> mlua::Result<()> {
+        if let Some(tx) = self.attachment_tx.as_ref() {
+            tx.send(attachment)
                 .map_err(|e| mlua::Error::ExternalError(Arc::new(e)))?;
         }
         Ok(())

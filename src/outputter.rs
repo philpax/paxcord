@@ -1,7 +1,9 @@
 use serenity::all::{
-    CommandInteraction, CreateAllowedMentions, CreateInteractionResponse,
+    CommandInteraction, CreateAllowedMentions, CreateAttachment, CreateInteractionResponse,
     CreateInteractionResponseMessage, CreateMessage, EditMessage, Http, Message, MessageId, UserId,
 };
+
+use crate::lua::extensions::Attachment;
 
 pub struct Outputter<'a> {
     http: &'a Http,
@@ -9,6 +11,7 @@ pub struct Outputter<'a> {
     user_id: UserId,
     messages: Vec<Message>,
     chunks: Vec<String>,
+    pending_attachments: Vec<CreateAttachment>,
 
     in_terminal_state: bool,
 
@@ -41,6 +44,7 @@ impl<'a> Outputter<'a> {
             user_id: cmd.user.id,
             messages: vec![starting_message],
             chunks: vec![],
+            pending_attachments: vec![],
 
             in_terminal_state: false,
 
@@ -68,6 +72,13 @@ impl<'a> Outputter<'a> {
         Ok(())
     }
 
+    pub fn add_attachment(&mut self, attachment: Attachment) {
+        self.pending_attachments.push(CreateAttachment::bytes(
+            attachment.data,
+            attachment.filename,
+        ));
+    }
+
     pub async fn error(&mut self, err: &str) -> anyhow::Result<()> {
         self.on_error(err).await
     }
@@ -84,6 +95,17 @@ impl<'a> Outputter<'a> {
 
         self.in_terminal_state = true;
         self.sync_messages_with_chunks().await?;
+
+        // Add any pending attachments to the last message
+        if !self.pending_attachments.is_empty()
+            && let Some(last) = self.messages.last_mut()
+        {
+            let mut edit = EditMessage::new();
+            for attachment in self.pending_attachments.drain(..) {
+                edit = edit.new_attachment(attachment);
+            }
+            last.edit(self.http, edit).await?;
+        }
 
         Ok(())
     }

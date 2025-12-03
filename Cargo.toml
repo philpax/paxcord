@@ -16,8 +16,10 @@ mlua = { version = "0.11.5", features = [
     "async",
     "send",
     "error-send",
+    "serialize",
 ] }
 perchance-interpreter = { git = "https://github.com/philpax/perchance-interpreter" }
+rucomfyui_mlua = { git = "https://github.com/philpax/rucomfyui" }
 rand = "0.8"
 reqwest = { version = "0.12", features = [
     "json",

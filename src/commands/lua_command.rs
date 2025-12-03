@@ -10,7 +10,10 @@ use serenity::all::{
 
 use crate::{
     config,
-    lua::{execute_lua_thread, extensions::TemporaryChannelUpdate},
+    lua::{
+        LuaOutputChannels, execute_lua_thread,
+        extensions::{Attachment, TemporaryChannelUpdate},
+    },
 };
 
 pub struct Handler {
@@ -52,16 +55,17 @@ impl super::CommandHandler for Handler {
 
     #[allow(clippy::await_holding_lock)]
     async fn run(&self, http: &Http, cmd: &CommandInteraction) -> anyhow::Result<()> {
-        // Create output/print channels for this execution
+        // Create output/print/attachment channels for this execution
         let (output_tx, output_rx) = flume::unbounded::<String>();
         let (print_tx, print_rx) = flume::unbounded::<String>();
+        let (attachment_tx, attachment_rx) = flume::unbounded::<Attachment>();
 
         // Lock the global Lua state for this execution (held for entire duration)
         let lua = &self.global_lua;
 
         // Update output channels for this execution
         let _temporary_channel_update =
-            TemporaryChannelUpdate::new(lua.clone(), output_tx, print_tx)?;
+            TemporaryChannelUpdate::new(lua.clone(), output_tx, print_tx, attachment_tx)?;
 
         // Build interaction table
         let interaction = lua.create_table()?;
@@ -110,8 +114,11 @@ impl super::CommandHandler for Handler {
             cmd,
             &self.discord_config,
             thread,
-            output_rx,
-            print_rx,
+            LuaOutputChannels {
+                output_rx,
+                print_rx,
+                attachment_rx,
+            },
             None,
         )
         .await
