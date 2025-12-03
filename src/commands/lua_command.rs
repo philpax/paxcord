@@ -33,10 +33,6 @@ impl Handler {
 
 #[serenity::async_trait]
 impl super::CommandHandler for Handler {
-    fn name(&self) -> &str {
-        &self.name
-    }
-
     async fn register(&self, http: &Http) -> anyhow::Result<()> {
         let command_spec = self
             .command_registry

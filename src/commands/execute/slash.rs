@@ -16,10 +16,6 @@ impl Handler {
 }
 #[serenity::async_trait]
 impl CommandHandler for Handler {
-    fn name(&self) -> &str {
-        constant::commands::EXECUTE
-    }
-
     async fn register(&self, http: &Http) -> anyhow::Result<()> {
         Command::create_global_command(
             http,

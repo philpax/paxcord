@@ -38,10 +38,6 @@ impl Handler {
 
 #[serenity::async_trait]
 impl super::CommandHandler for Handler {
-    fn name(&self) -> &str {
-        "reload"
-    }
-
     async fn register(&self, http: &Http) -> anyhow::Result<()> {
         let cmd = CreateCommand::new("reload")
             .description("Reload all Lua scripts and re-register commands");
