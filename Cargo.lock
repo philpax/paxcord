@@ -293,6 +293,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "convert_case"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec182b0ca2f35d8fc196cf3404988fd8b8c739a4d270ff118a398feb0cbec1ca"
+dependencies = [
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -492,6 +501,12 @@ checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "env_home"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7f84e12ccf0a7ddc17a6c41c93326024c42920d7ee630d04950e6926645c0fe"
 
 [[package]]
 name = "equivalent"
@@ -1260,6 +1275,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "30bde2b3dc3671ae49d8e2e9f044c7c005836e7a023ee57cffa25ab82764bb9e"
 
 [[package]]
+name = "lua-src"
+version = "548.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdc4e1aff422ad5f08cffb4719603dcdbc2be2307f4c1510d7aab74b7fa88ca8"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "luajit-src"
+version = "210.6.4+e17ee83"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35a0ceb2a395ffa403a863adcf365e82cc8d8338ac7f5f949b9df5ca3de251e1"
+dependencies = [
+ "cc",
+ "which",
+]
+
+[[package]]
 name = "luau0-src"
 version = "0.17.0+luau701"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1360,6 +1394,8 @@ checksum = "8c968af21bf6b19fc9ca8e7b85ee16f86e4c9e3d0591de101a5608086bda0ad8"
 dependencies = [
  "cc",
  "cfg-if",
+ "lua-src",
+ "luajit-src",
  "luau0-src",
  "pkg-config",
 ]
@@ -1514,11 +1550,10 @@ dependencies = [
  "async-openai",
  "flume",
  "mlua",
- "parking_lot",
  "perchance-interpreter",
  "rand 0.8.5",
  "reqwest 0.12.15",
- "rucomfyui",
+ "rucomfyui_mlua",
  "serde",
  "serde_json",
  "serenity",
@@ -1883,7 +1918,7 @@ dependencies = [
 [[package]]
 name = "rucomfyui"
 version = "0.1.0"
-source = "git+https://github.com/philpax/rucomfyui#fd51d5d160ad6cc966dec5460656eb9d4ba24bec"
+source = "git+https://github.com/philpax/rucomfyui#c1105a434f5d5df2812c1ddd07fd9b1e423f4e6b"
 dependencies = [
  "futures",
  "futures-timer",
@@ -1893,6 +1928,17 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "web-time",
+]
+
+[[package]]
+name = "rucomfyui_mlua"
+version = "0.1.0"
+source = "git+https://github.com/philpax/rucomfyui#c1105a434f5d5df2812c1ddd07fd9b1e423f4e6b"
+dependencies = [
+ "convert_case",
+ "mlua",
+ "rucomfyui",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -2858,6 +2904,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a5f39404a5da50712a4c1eecf25e90dd62b613502b7e925fd4e4d19b5c96512"
 
 [[package]]
+name = "unicode-segmentation"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
+
+[[package]]
 name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3074,12 +3126,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "which"
+version = "8.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3fabb953106c3c8eea8306e4393700d7657561cb43122571b172bbfb7c7ba1d"
+dependencies = [
+ "env_home",
+ "rustix",
+ "winsafe",
+]
+
+[[package]]
 name = "winapi-util"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -3391,6 +3454,12 @@ dependencies = [
  "cfg-if",
  "windows-sys 0.48.0",
 ]
+
+[[package]]
+name = "winsafe"
+version = "0.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d135d17ab770252ad95e9a872d365cf3090e3be864a34ab46f48555993efc904"
 
 [[package]]
 name = "wit-bindgen-rt"

@@ -205,16 +205,50 @@ discord.register_command {
 	},
 	execute = function(interaction)
 		local prompt = interaction.options.prompt
-		local negative = interaction.options.negative
-		local seed = interaction.options.seed
+		local negative = interaction.options.negative or "text, watermark, blurry"
+		local seed = interaction.options.seed or math.random(0, 2147483647)
 
-		output("Connecting to ComfyUI and generating image...")
+		output("Connecting to ComfyUI...")
 
-		-- Generate the image using the SDXL workflow
-		local result = comfy.paintsdxl(prompt, negative, seed)
+		-- Get client and object info (lazily cached)
+		local client = comfy.client()
+		local object_info = comfy.object_info()
 
-		if result.image_count > 0 then
-			output("Generated " .. result.image_count .. " image(s)!\n\n-# Prompt: " .. prompt)
+		output("Building workflow...")
+
+		-- Create the graph
+		local g = comfy.graph(object_info)
+
+		-- Build the SDXL workflow
+		local c = g:CheckpointLoaderSimple("sd_xl_base_1.0.safetensors")
+		local preview = g:PreviewImage(
+			g:VAEDecode {
+				vae = c.vae,
+				samples = g:KSampler {
+					model = c.model,
+					seed = seed,
+					steps = 20,
+					cfg = 8.0,
+					sampler_name = "euler",
+					scheduler = "normal",
+					positive = g:CLIPTextEncode { text = prompt, clip = c.clip },
+					negative = g:CLIPTextEncode { text = negative, clip = c.clip },
+					latent_image = g:EmptyLatentImage { width = 1024, height = 1024, batch_size = 1 },
+					denoise = 1.0,
+				},
+			}
+		)
+
+		output("Generating image (seed: " .. seed .. ")...")
+
+		-- Queue the workflow and wait for results
+		local result = client:easy_queue(g)
+
+		-- Get the images from the preview node
+		local images = result[preview].images
+
+		if #images > 0 then
+			output("Generated " .. #images .. " image(s)!\n\n-# Prompt: " .. prompt .. " | Seed: " .. seed)
 		else
 			output("No images were generated.")
 		end
