@@ -1918,7 +1918,7 @@ dependencies = [
 [[package]]
 name = "rucomfyui"
 version = "0.1.0"
-source = "git+https://github.com/philpax/rucomfyui#c044caa905559a938100c9cc79407eb0323f3820"
+source = "git+https://github.com/philpax/rucomfyui#c5433483c875c3ded3cd86de7ed3b7b5a9c23578"
 dependencies = [
  "futures",
  "futures-timer",
@@ -1933,7 +1933,7 @@ dependencies = [
 [[package]]
 name = "rucomfyui_mlua"
 version = "0.1.0"
-source = "git+https://github.com/philpax/rucomfyui#c044caa905559a938100c9cc79407eb0323f3820"
+source = "git+https://github.com/philpax/rucomfyui#c5433483c875c3ded3cd86de7ed3b7b5a9c23578"
 dependencies = [
  "convert_case",
  "mlua",
