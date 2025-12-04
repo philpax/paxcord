@@ -191,7 +191,7 @@ local function generate_sdxl_image(prompt, negative, seed)
 	local g = comfy.graph(object_info)
 
 	-- Build the SDXL workflow
-	local c = g:CheckpointLoaderSimple("sd_xl_base_1.0.safetensors")
+	local c = g:CheckpointLoaderSimple("SDXL 1.0 ^SDXL.safetensors")
 	local preview = g:PreviewImage(g:VAEDecode {
 		vae = c.vae,
 		samples = g:KSampler {
