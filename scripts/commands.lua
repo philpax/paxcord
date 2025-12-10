@@ -72,7 +72,7 @@ discord.register_command {
 	execute = function(interaction)
 		local model = interaction.options.model
 		local prompt = interaction.options.prompt
-		local seed = interaction.options.seed
+		local seed = interaction.options.seed or math.random(1, 2147483647)
 
 		output("Generating...")
 
@@ -83,7 +83,7 @@ discord.register_command {
 
 		local response = string.trim(stream_llm_response(messages, model, seed))
 
-		output(response .. "\n\n-# Model: " .. model .. (seed and (" | Seed: " .. seed) or ""))
+		output(response .. "\n\n-# Model: " .. model .. " | Seed: " .. seed)
 	end,
 }
 
@@ -156,12 +156,12 @@ discord.register_command {
 			type = "integer",
 			required = false,
 			min_value = 0,
-			max_value = 4294967295, -- 2^32 - 1 (u32 max)
+			max_value = 2147483647,
 		},
 	},
 	execute = function(interaction)
 		local count = interaction.options.count or 1
-		local seed = interaction.options.seed or math.random(1, 2147483647) -- Use i32 max for Lua compatibility
+		local seed = interaction.options.seed or math.random(1, 2147483647)
 
 		local generator = "output = {import:prompt_generator}"
 
@@ -367,7 +367,7 @@ discord.register_command {
 	execute = function(interaction)
 		local prompt = interaction.options.prompt
 		local negative = interaction.options.negative or "text, watermark, blurry"
-		local seed = interaction.options.seed or math.random(0, 2147483647)
+		local seed = interaction.options.seed or math.random(1, 2147483647)
 		local model_info = interaction.options.model and get_model_info(interaction.options.model) or get_random_model()
 		local width = interaction.options.width
 		local height = interaction.options.height
@@ -396,10 +396,19 @@ discord.register_command {
 			type = "string",
 			required = false,
 		},
+		{
+			name = "seed",
+			description = "Random seed for deterministic output",
+			type = "integer",
+			required = false,
+			min_value = 0,
+			max_value = 2147483647,
+		},
 	},
 	execute = function(interaction)
 		local prompt = interaction.options.prompt
 		local system_prompt = interaction.options.system or askchorus_default_system
+		local seed = interaction.options.seed or math.random(1, 2147483647)
 		local models = {
 			"gpu:qwen3-4b-instruct",
 			"gpu:gemma-3n-e4b-it",
@@ -421,7 +430,7 @@ discord.register_command {
 		local responses = {}
 
 		local function format_output()
-			local parts = { "**" .. prompt .. "**\n" }
+			local parts = { "**" .. prompt .. "** (seed: " .. seed .. ")\n" }
 			for _, entry in ipairs(responses) do
 				table.insert(parts, "\n`" .. entry.model .. "`: " .. string.trim(entry.response))
 			end
@@ -435,6 +444,7 @@ discord.register_command {
 			llm.stream({
 				messages = messages,
 				model = model,
+				seed = seed,
 				callback = function(chunk)
 					responses[#responses].response = chunk
 					output(format_output())
@@ -490,7 +500,7 @@ discord.register_command {
 	},
 	execute = function(interaction)
 		local negative = interaction.options.negative or "text, watermark, blurry"
-		local seed = interaction.options.seed or math.random(0, 2147483647)
+		local seed = interaction.options.seed or math.random(1, 2147483647)
 		local model_info = interaction.options.model and get_model_info(interaction.options.model) or get_random_model()
 		local width = interaction.options.width
 		local height = interaction.options.height
