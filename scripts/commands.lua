@@ -370,6 +370,75 @@ discord.register_command {
 	end,
 }
 
+-- Default system prompt for askchorus
+local askchorus_default_system = "You are a helpful assistant."
+
+-- Register the /askchorus command
+discord.register_command {
+	name = "askchorus",
+	description = "Ask multiple models the same prompt and stream all responses",
+	options = {
+		{
+			name = "prompt",
+			description = "The prompt to send to all models",
+			type = "string",
+			required = true,
+		},
+		{
+			name = "system",
+			description = "System prompt (default: '" .. askchorus_default_system .. "')",
+			type = "string",
+			required = false,
+		},
+	},
+	execute = function(interaction)
+		local prompt = interaction.options.prompt
+		local system_prompt = interaction.options.system or askchorus_default_system
+		local models = {
+			"gpu:qwen3-4b-instruct",
+			"gpu:qwen3-30b-a3b-instruct-2507",
+			"gpu:qwen3-32b",
+			"gpu:gemma-3-27b-it",
+			"gpu:gemma-3-27b-it-abliterated",
+			"gpu:gemma-3-glitter-27b",
+			"gpu:gemma-3n-e4b-it",
+			"gpu:glm-4-32b-0414",
+			"gpu:mistral-small-3.2-24b-instruct-2506",
+			"gpu:gpt-oss-20b",
+		}
+
+		local messages = {
+			llm.system(system_prompt),
+			llm.user(prompt),
+		}
+
+		local responses = {}
+
+		local function format_output()
+			local parts = { "**" .. prompt .. "**\n" }
+			for _, entry in ipairs(responses) do
+				table.insert(parts, "\n`" .. entry.model .. "`: " .. string.trim(entry.response))
+			end
+			return table.concat(parts)
+		end
+
+		for _, model in ipairs(models) do
+			table.insert(responses, { model = model, response = "" })
+			output(format_output())
+
+			llm.stream({
+				messages = messages,
+				model = model,
+				callback = function(chunk)
+					responses[#responses].response = chunk
+					output(format_output())
+					return true
+				end,
+			})
+		end
+	end,
+}
+
 -- Register the /paintperchance command
 discord.register_command {
 	name = "paintperchance",
