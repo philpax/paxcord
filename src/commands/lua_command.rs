@@ -108,7 +108,7 @@ impl super::CommandHandler for Handler {
             TemporaryChannelUpdate::new(lua.clone(), &thread, output_tx, print_tx, attachment_tx)?;
 
         // Convert to async thread
-        let thread = thread.into_async::<()>(interaction)?;
+        let thread = thread.into_async::<Option<String>>(interaction)?;
 
         // Execute the Lua thread using the shared executor (no cancellation support)
         execute_lua_thread(

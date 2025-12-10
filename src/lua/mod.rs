@@ -67,12 +67,17 @@ pub fn load_async_expression<R: mlua::FromLuaMulti>(
     lua: &mlua::Lua,
     expression: &str,
 ) -> anyhow::Result<mlua::AsyncThread<R>> {
+    // First try: treat as expression, wrap with return and inspect for display
     let with_return = lua
         .load(
             format!(
                 r#"
 coroutine.create(function()
-    return {expression}
+    local result = ({expression})
+    if result ~= nil then
+        return inspect(result)
+    end
+    return nil
 end)
 "#
             )
@@ -84,6 +89,7 @@ end)
     match with_return {
         Ok(thread) => Ok(thread),
         Err(with_return_err) => {
+            // Second try: treat as statements (for-loops, etc.) - no implicit return
             let without_return = lua
                 .load(
                     format!(

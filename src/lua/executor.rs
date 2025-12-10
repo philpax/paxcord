@@ -13,17 +13,14 @@ pub struct LuaOutputChannels {
 }
 
 /// Executes a Lua async thread with output handling and optional cancellation support.
-pub async fn execute_lua_thread<R>(
+pub async fn execute_lua_thread(
     http: &Http,
     cmd: &CommandInteraction,
     discord_config: &config::Discord,
-    mut thread: mlua::AsyncThread<R>,
+    mut thread: mlua::AsyncThread<Option<String>>,
     channels: LuaOutputChannels,
     mut cancel_rx: Option<flume::Receiver<MessageId>>,
-) -> anyhow::Result<()>
-where
-    R: mlua::FromLuaMulti + std::marker::Unpin,
-{
+) -> anyhow::Result<()> {
     let mut outputter = Outputter::new(
         http,
         cmd,
@@ -55,6 +52,7 @@ where
     };
 
     let mut errored = false;
+    let mut thread_result: Option<String> = None;
     let mut output_stream = channels.output_rx.stream();
     let mut print_stream = channels.print_rx.stream();
     let mut attachment_stream = channels.attachment_rx.stream();
@@ -93,9 +91,13 @@ where
             }
 
             // Handle thread stream
-            thread_result = thread.next() => {
-                match thread_result {
-                    Some(Ok(_)) => {
+            thread_next = thread.next() => {
+                match thread_next {
+                    Some(Ok(result)) => {
+                        // Capture the return value from the thread (already stringified by Lua)
+                        if let Some(value) = result {
+                            thread_result = Some(value);
+                        }
                         outputter.update(&output.to_final_output()).await?;
                     }
                     Some(Err(err)) => {
@@ -113,6 +115,13 @@ where
     }
 
     if !errored {
+        // If no explicit output was set but the thread returned a value, use that as output
+        if output.output.is_empty()
+            && let Some(result) = thread_result
+        {
+            output.output = result;
+            outputter.update(&output.to_final_output()).await?;
+        }
         outputter.finish().await?;
     }
 

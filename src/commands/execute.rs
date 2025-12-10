@@ -14,7 +14,7 @@ use crate::{
         LuaOutputChannels, create_barebones_lua_state, execute_lua_thread, extensions::Attachment,
         load_async_expression,
     },
-    util,
+    util::{self, RespondableInteraction},
 };
 
 pub struct Handler {
@@ -100,7 +100,13 @@ impl CommandHandler for Handler {
             print_tx,
             attachment_tx,
         )?;
-        let thread = load_async_expression::<Option<String>>(&lua, code)?;
+        let thread = match load_async_expression::<Option<String>>(&lua, code) {
+            Ok(thread) => thread,
+            Err(err) => {
+                cmd.create(http, &format!("Error: {err}")).await?;
+                return Ok(());
+            }
+        };
 
         // Execute the Lua thread using the shared executor (with cancellation support)
         execute_lua_thread(
