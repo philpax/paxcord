@@ -177,8 +177,87 @@ discord.register_command {
 	end,
 }
 
--- Shared function to generate images using SDXL
-local function generate_sdxl_image(prompt, negative, seed)
+-- Model filenames: "Name [keyword] ^ARCH.ext" where [keyword] is optional
+local model_data = {
+	"ACertainModel ^SD1.ckpt",
+	"ACertainThing ^SD1.ckpt",
+	"AbyssOrangeMix2_sfw ^SD1.safetensors",
+	"Analog [analog style] ^SD1.safetensors",
+	"Anything v3.0 ^SD1.ckpt",
+	"Cinematic Diffusion [syberart] ^SD1.ckpt",
+	"Dreamlike Photoreal 2.0 ^SD1.safetensors",
+	"Dreamlike [dreamlike art] ^SD1.ckpt",
+	"Holosomnia Landscape [holosomnialandscape] ^SD1.ckpt",
+	"Inkpunk v2 [nvinkpunk] ^SD1.ckpt",
+	"Pastel Mix ^SD1.safetensors",
+	"Stable v1.5 ^SD1.ckpt",
+	"Van Gogh v2 [lvngvncnt] ^SD1.ckpt",
+	"Vintedois v0.1 [estilovintedois] ^SD1.ckpt",
+	"seek.art MEGA ^SD1.ckpt",
+	"Stable v2.1 ^SD2.ckpt",
+	"SDXL 1.0 ^SDXL.safetensors",
+	"SDXL Turbo 1.0 ^SDXL.safetensors",
+}
+
+-- Default dimensions per architecture
+local arch_defaults = {
+	SD1 = { width = 512, height = 512 },
+	SD2 = { width = 768, height = 768 },
+	SDXL = { width = 1024, height = 1024 },
+}
+
+-- Parse a model filename into its components
+local function parse_model_filename(filename)
+	-- Extract keyword if present: [keyword]
+	local keyword = filename:match("%[([^%]]+)%]")
+
+	-- Extract architecture: ^ARCH
+	local arch = filename:match("%^(%w+)")
+
+	-- Extract display name: everything before [keyword] or ^ARCH
+	local name = filename:match("^(.-)%s*%[") or filename:match("^(.-)%s*%^")
+
+	return {
+		filename = filename,
+		name = name,
+		arch = arch,
+		keyword = keyword,
+	}
+end
+
+-- Build model choices for command options
+local model_choices = map(model_data, function(filename)
+	local info = parse_model_filename(filename)
+	return {
+		name = info.name .. " (" .. info.arch .. ")",
+		value = filename,
+	}
+end)
+
+-- Helper to get model info by filename
+local function get_model_info(filename)
+	return parse_model_filename(filename)
+end
+
+-- Helper to get random model
+local function get_random_model()
+	local idx = math.random(1, #model_data)
+	return parse_model_filename(model_data[idx])
+end
+
+-- Shared function to generate images
+local function generate_image(prompt, negative, seed, model_info, width, height)
+	-- Apply prompt keyword if model has one
+	local final_prompt = prompt
+	if model_info.keyword then
+		final_prompt = prompt .. ", " .. model_info.keyword
+	end
+
+	-- Use architecture defaults if dimensions not specified
+	local defaults = arch_defaults[model_info.arch]
+	width = width or defaults.width
+	height = height or defaults.height
+
 	output("Connecting to ComfyUI...")
 
 	-- Get client and object info (lazily cached)
@@ -190,8 +269,8 @@ local function generate_sdxl_image(prompt, negative, seed)
 	-- Create the graph
 	local g = comfy.graph(object_info)
 
-	-- Build the SDXL workflow
-	local c = g:CheckpointLoaderSimple("SDXL 1.0 ^SDXL.safetensors")
+	-- Build the workflow with selected model
+	local c = g:CheckpointLoaderSimple(model_info.filename)
 	local preview = g:PreviewImage(g:VAEDecode {
 		vae = c.vae,
 		samples = g:KSampler {
@@ -201,9 +280,9 @@ local function generate_sdxl_image(prompt, negative, seed)
 			cfg = 8.0,
 			sampler_name = "euler",
 			scheduler = "normal",
-			positive = g:CLIPTextEncode { text = prompt, clip = c.clip },
+			positive = g:CLIPTextEncode { text = final_prompt, clip = c.clip },
 			negative = g:CLIPTextEncode { text = negative, clip = c.clip },
-			latent_image = g:EmptyLatentImage { width = 1024, height = 1024, batch_size = 1 },
+			latent_image = g:EmptyLatentImage { width = width, height = height, batch_size = 1 },
 			denoise = 1.0,
 		},
 	})
@@ -221,22 +300,48 @@ local function generate_sdxl_image(prompt, negative, seed)
 		for i, image_data in ipairs(images) do
 			attach("image_" .. seed .. "_" .. i .. ".png", image_data)
 		end
-		output("Prompt: " .. prompt .. " | Seed: " .. seed)
+		output(string.format(
+			"Prompt: %s | Model: %s | Size: %dx%d | Seed: %d",
+			prompt, model_info.name, width, height, seed
+		))
 	else
 		output("No images were generated.")
 	end
 end
 
--- Register the /paintsdxl command
+-- Register the /paint command
 discord.register_command {
-	name = "paintsdxl",
-	description = "Generate an image using Stable Diffusion XL via ComfyUI",
+	name = "paint",
+	description = "Generate an image via ComfyUI",
 	options = {
 		{
 			name = "prompt",
 			description = "The prompt describing the image to generate",
 			type = "string",
 			required = true,
+		},
+		{
+			name = "model",
+			description = "The model to use (default: random)",
+			type = "string",
+			required = false,
+			choices = model_choices,
+		},
+		{
+			name = "width",
+			description = "Image width (default: based on model architecture)",
+			type = "integer",
+			required = false,
+			min_value = 64,
+			max_value = 2048,
+		},
+		{
+			name = "height",
+			description = "Image height (default: based on model architecture)",
+			type = "integer",
+			required = false,
+			min_value = 64,
+			max_value = 2048,
 		},
 		{
 			name = "negative",
@@ -257,16 +362,42 @@ discord.register_command {
 		local prompt = interaction.options.prompt
 		local negative = interaction.options.negative or "text, watermark, blurry"
 		local seed = interaction.options.seed or math.random(0, 2147483647)
+		local model_info = interaction.options.model and get_model_info(interaction.options.model) or get_random_model()
+		local width = interaction.options.width
+		local height = interaction.options.height
 
-		generate_sdxl_image(prompt, negative, seed)
+		generate_image(prompt, negative, seed, model_info, width, height)
 	end,
 }
 
 -- Register the /paintperchance command
 discord.register_command {
 	name = "paintperchance",
-	description = "Generate an image using a random prompt from Perchance and Stable Diffusion XL",
+	description = "Generate an image using a random prompt from Perchance",
 	options = {
+		{
+			name = "model",
+			description = "The model to use (default: random)",
+			type = "string",
+			required = false,
+			choices = model_choices,
+		},
+		{
+			name = "width",
+			description = "Image width (default: based on model architecture)",
+			type = "integer",
+			required = false,
+			min_value = 64,
+			max_value = 2048,
+		},
+		{
+			name = "height",
+			description = "Image height (default: based on model architecture)",
+			type = "integer",
+			required = false,
+			min_value = 64,
+			max_value = 2048,
+		},
 		{
 			name = "negative",
 			description = "Negative prompt (default: 'text, watermark, blurry')",
@@ -285,6 +416,9 @@ discord.register_command {
 	execute = function(interaction)
 		local negative = interaction.options.negative or "text, watermark, blurry"
 		local seed = interaction.options.seed or math.random(0, 2147483647)
+		local model_info = interaction.options.model and get_model_info(interaction.options.model) or get_random_model()
+		local width = interaction.options.width
+		local height = interaction.options.height
 
 		output("Generating prompt...")
 
@@ -295,6 +429,6 @@ discord.register_command {
 		output("Generated prompt: " .. prompt)
 
 		-- Generate the image using the generated prompt
-		generate_sdxl_image(prompt, negative, seed)
+		generate_image(prompt, negative, seed, model_info, width, height)
 	end,
 }
