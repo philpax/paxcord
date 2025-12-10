@@ -300,10 +300,16 @@ local function generate_image(prompt, negative, seed, model_info, width, height)
 		for i, image_data in ipairs(images) do
 			attach("image_" .. seed .. "_" .. i .. ".png", image_data)
 		end
-		output(string.format(
-			"Prompt: %s | Model: %s | Size: %dx%d | Seed: %d",
-			prompt, model_info.name, width, height, seed
-		))
+		output(
+			string.format(
+				"Prompt: %s | Model: %s | Size: %dx%d | Seed: %d",
+				prompt,
+				model_info.name,
+				width,
+				height,
+				seed
+			)
+		)
 	else
 		output("No images were generated.")
 	end
