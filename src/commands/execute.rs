@@ -14,16 +14,97 @@ use crate::{
         LuaOutputChannels, create_barebones_lua_state, execute_lua_thread, extensions::Attachment,
         load_async_expression,
     },
-    util::{self, RespondableInteraction},
+    util::RespondableInteraction,
 };
 
-pub struct Handler {
+pub struct Handler(Arc<SharedState>);
+impl Handler {
+    pub fn new(shared_state: Arc<SharedState>) -> Self {
+        Self(shared_state)
+    }
+}
+#[serenity::async_trait]
+impl CommandHandler for Handler {
+    async fn register(&self, http: &Http) -> anyhow::Result<()> {
+        Command::create_global_command(
+            http,
+            CreateCommand::new(constant::commands::EXECUTE)
+                .description("Execute the given Lua code snippet.")
+                .add_option(
+                    CreateCommandOption::new(
+                        CommandOptionType::String,
+                        constant::value::CODE,
+                        "The Lua code to execute.",
+                    )
+                    .required(true),
+                ),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn run(&self, http: &Http, cmd: &CommandInteraction) -> anyhow::Result<()> {
+        let code = cmd
+            .data
+            .options
+            .first()
+            .and_then(|o| o.value.as_str())
+            .ok_or_else(|| anyhow::anyhow!("no code specified"))?;
+        self.0.execute_code(http, cmd, code).await
+    }
+}
+
+pub struct MsgHandler(Arc<SharedState>);
+impl MsgHandler {
+    pub fn new(shared_state: Arc<SharedState>) -> Self {
+        Self(shared_state)
+    }
+}
+#[serenity::async_trait]
+impl CommandHandler for MsgHandler {
+    async fn register(&self, http: &Http) -> anyhow::Result<()> {
+        Command::create_global_command(
+            http,
+            CreateCommand::new(constant::commands::EXECUTE_MSG)
+                .description("Execute the Lua code block from the given message ID.")
+                .add_option(
+                    CreateCommandOption::new(
+                        CommandOptionType::String,
+                        constant::value::MESSAGE_ID,
+                        "The ID of the message containing the Lua code block.",
+                    )
+                    .required(true),
+                ),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn run(&self, http: &Http, cmd: &CommandInteraction) -> anyhow::Result<()> {
+        let message_id = cmd
+            .data
+            .options
+            .first()
+            .and_then(|o| o.value.as_str())
+            .ok_or_else(|| anyhow::anyhow!("no message ID specified"))?;
+
+        let message = cmd
+            .channel_id
+            .message(http, message_id.parse::<u64>()?)
+            .await?;
+
+        self.0.execute_code(http, cmd, &message.content).await
+    }
+}
+
+pub struct SharedState {
     discord_config: config::Discord,
     cancel_rx: flume::Receiver<MessageId>,
     ai: Arc<Ai>,
     currency_converter: Arc<CurrencyConverter>,
 }
-impl Handler {
+
+impl SharedState {
     pub fn new(
         discord_config: config::Discord,
         cancel_rx: flume::Receiver<MessageId>,
@@ -37,57 +118,14 @@ impl Handler {
             currency_converter,
         }
     }
-}
-#[serenity::async_trait]
-impl CommandHandler for Handler {
-    async fn register(&self, http: &Http) -> anyhow::Result<()> {
-        Command::create_global_command(
-            http,
-            CreateCommand::new(constant::commands::EXECUTE)
-                .description("Execute the Lua code block from the given code snippet or message ID.")
-                .add_option(
-                    CreateCommandOption::new(
-                        CommandOptionType::String,
-                        constant::value::CODE,
-                        "The Lua code block to execute. Mutually exclusive with message ID.",
-                    )
-                    .required(false),
-                )
-                .add_option(
-                    CreateCommandOption::new(
-                        CommandOptionType::String,
-                        constant::value::MESSAGE_ID,
-                        "The ID of the message to execute the code block from. Mutually exclusive with code.",
-                    )
-                    .required(false),
-                )
-        )
-        .await?;
-        Ok(())
-    }
 
-    async fn run(&self, http: &Http, cmd: &CommandInteraction) -> anyhow::Result<()> {
-        let options = &cmd.data.options;
-
-        let message_id =
-            util::get_value(options, constant::value::MESSAGE_ID).and_then(util::value_to_string);
-
-        let code = util::get_value(options, constant::value::CODE).and_then(util::value_to_string);
-
-        let unparsed_code = match (message_id, code) {
-            (Some(message_id), None) => {
-                let message = cmd
-                    .channel_id
-                    .message(http, message_id.parse::<u64>()?)
-                    .await?;
-
-                message.content
-            }
-            (None, Some(code)) => code,
-            (Some(_), Some(_)) => anyhow::bail!("message ID and code are mutually exclusive"),
-            (None, None) => anyhow::bail!("no message ID or code specified"),
-        };
-        let code = parse_markdown_lua_block(&unparsed_code).unwrap_or(&unparsed_code);
+    async fn execute_code(
+        &self,
+        http: &Http,
+        cmd: &CommandInteraction,
+        code: &str,
+    ) -> anyhow::Result<()> {
+        let code = parse_markdown_lua_block(code).unwrap_or(code);
 
         let (output_tx, output_rx) = flume::unbounded::<String>();
         let (print_tx, print_rx) = flume::unbounded::<String>();
@@ -108,7 +146,6 @@ impl CommandHandler for Handler {
             }
         };
 
-        // Execute the Lua thread using the shared executor (with cancellation support)
         execute_lua_thread(
             http,
             cmd,

@@ -1,19 +1,5 @@
 use serenity::{all::*, async_trait};
 
-pub fn get_value<'a>(
-    options: &'a [CommandDataOption],
-    name: &'a str,
-) -> Option<&'a CommandDataOptionValue> {
-    options.iter().find(|v| v.name == name).map(|v| &v.value)
-}
-
-pub fn value_to_string(v: &CommandDataOptionValue) -> Option<String> {
-    match v {
-        CommandDataOptionValue::String(v) => Some(v.clone()),
-        _ => None,
-    }
-}
-
 #[async_trait]
 #[allow(unused)]
 pub trait RespondableInteraction: Send + Sync {

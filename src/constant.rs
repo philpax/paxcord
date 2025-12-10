@@ -6,6 +6,6 @@ pub mod value {
 
 /// names of non-user-configurable commands
 pub mod commands {
-    /// Used by the slash command
     pub const EXECUTE: &str = "execute";
+    pub const EXECUTE_MSG: &str = "executemsg";
 }

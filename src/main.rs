@@ -96,15 +96,20 @@ fn build_handlers(
 ) -> HashMap<String, Arc<dyn commands::CommandHandler>> {
     let mut handlers: HashMap<String, Arc<dyn commands::CommandHandler>> = HashMap::new();
 
-    // Add execute command
+    // Add execute commands
+    let execute_state = Arc::new(commands::execute::SharedState::new(
+        config.discord.clone(),
+        cancel_rx.clone(),
+        ai.clone(),
+        currency_converter.clone(),
+    ));
     handlers.insert(
         "execute".to_string(),
-        Arc::new(commands::execute::Handler::new(
-            config.discord.clone(),
-            cancel_rx.clone(),
-            ai.clone(),
-            currency_converter.clone(),
-        )),
+        Arc::new(commands::execute::Handler::new(execute_state.clone())),
+    );
+    handlers.insert(
+        "executemsg".to_string(),
+        Arc::new(commands::execute::MsgHandler::new(execute_state)),
     );
 
     // Add Lua commands from registry
