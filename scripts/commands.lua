@@ -402,15 +402,15 @@ discord.register_command {
 		local system_prompt = interaction.options.system or askchorus_default_system
 		local models = {
 			"gpu:qwen3-4b-instruct",
-			"gpu:qwen3-30b-a3b-instruct-2507",
-			"gpu:qwen3-32b",
+			"gpu:gemma-3n-e4b-it",
+			"gpu:gpt-oss-20b",
+			"gpu:mistral-small-3.2-24b-instruct-2506",
 			"gpu:gemma-3-27b-it",
 			"gpu:gemma-3-27b-it-abliterated",
 			"gpu:gemma-3-glitter-27b",
-			"gpu:gemma-3n-e4b-it",
+			"gpu:qwen3-30b-a3b-instruct-2507",
 			"gpu:glm-4-32b-0414",
-			"gpu:mistral-small-3.2-24b-instruct-2506",
-			"gpu:gpt-oss-20b",
+			"gpu:qwen3-32b",
 		}
 
 		local messages = {
