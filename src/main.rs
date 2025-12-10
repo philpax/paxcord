@@ -147,7 +147,10 @@ impl EventHandler for Handler {
             panic!("Unknown interaction type: {interaction:?}");
         };
 
-        if let Err(err) = self.interaction_create_impl(&ctx.http, &interaction).await {
+        if let Err(err) = self
+            .interaction_create_impl(ctx.http.clone(), &interaction)
+            .await
+        {
             respondable
                 .create_or_edit(&ctx.http, &format!("Error: {err}"))
                 .await
@@ -165,7 +168,7 @@ impl Handler {
 
     async fn interaction_create_impl(
         &self,
-        http: &Http,
+        http: Arc<Http>,
         interaction: &Interaction,
     ) -> anyhow::Result<()> {
         match interaction {
@@ -174,7 +177,7 @@ impl Handler {
                 let handler = self.handlers.lock().unwrap().get(name).cloned();
 
                 if let Some(handler) = handler {
-                    handler.run(http, cmd).await?;
+                    handler.run(http.clone(), cmd).await?;
                 } else {
                     anyhow::bail!("no handler found for command: {name}");
                 }
@@ -187,7 +190,7 @@ impl Handler {
 
                     self.cancel_tx.send(message_id).ok();
                     cmp.create_response(
-                        http,
+                        &*http,
                         CreateInteractionResponse::UpdateMessage(
                             CreateInteractionResponseMessage::new(),
                         ),

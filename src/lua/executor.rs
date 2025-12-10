@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
 use serenity::{
     all::{CommandInteraction, Http, MessageId},
     futures::StreamExt as _,
 };
 
-use crate::{config, lua::extensions::Attachment, outputter::Outputter};
+use crate::{config, lua::extensions::Attachment, outputter::OutputterHandle};
 
 /// Channels for receiving output from Lua execution
 pub struct LuaOutputChannels {
@@ -14,17 +16,17 @@ pub struct LuaOutputChannels {
 
 /// Executes a Lua async thread with output handling and optional cancellation support.
 pub async fn execute_lua_thread(
-    http: &Http,
+    http: Arc<Http>,
     cmd: &CommandInteraction,
     discord_config: &config::Discord,
     mut thread: mlua::AsyncThread<Option<String>>,
     channels: LuaOutputChannels,
     mut cancel_rx: Option<flume::Receiver<MessageId>>,
 ) -> anyhow::Result<()> {
-    let mut outputter = Outputter::new(
+    let outputter = OutputterHandle::new(
         http,
         cmd,
-        std::time::Duration::from_millis(discord_config.message_update_interval_ms),
+        discord_config.message_update_interval_ms,
         "Executing...",
     )
     .await?;
@@ -66,7 +68,7 @@ pub async fn execute_lua_thread(
             // Check for cancellation (highest priority) - pending forever if None
             Some(cancel_message_id) = next_if_some(&mut cancel_rx) => {
                 if cancel_message_id == starting_message_id {
-                    outputter.cancelled().await?;
+                    outputter.cancelled();
                     errored = true;
                     break;
                 }
@@ -76,13 +78,13 @@ pub async fn execute_lua_thread(
             // Handle values from output stream
             Some(value) = output_stream.next() => {
                 output.output = value;
-                outputter.update(&output.to_final_output()).await?;
+                outputter.update(&output.to_final_output());
             }
 
             // Handle values from print stream
             Some(value) = print_stream.next() => {
                 output.print_log.push(value);
-                outputter.update(&output.to_final_output()).await?;
+                outputter.update(&output.to_final_output());
             }
 
             // Handle attachments
@@ -98,10 +100,10 @@ pub async fn execute_lua_thread(
                         if let Some(value) = result {
                             thread_result = Some(value);
                         }
-                        outputter.update(&output.to_final_output()).await?;
+                        outputter.update(&output.to_final_output());
                     }
                     Some(Err(err)) => {
-                        outputter.error(&err.to_string()).await?;
+                        outputter.error(&err.to_string());
                         errored = true;
                         break;
                     }
@@ -120,10 +122,12 @@ pub async fn execute_lua_thread(
             && let Some(result) = thread_result
         {
             output.output = result;
-            outputter.update(&output.to_final_output()).await?;
+            outputter.update(&output.to_final_output());
         }
-        outputter.finish().await?;
+        outputter.finish();
     }
+
+    outputter.join().await?;
 
     Ok(())
 }

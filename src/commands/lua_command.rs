@@ -54,7 +54,7 @@ impl super::CommandHandler for Handler {
     }
 
     #[allow(clippy::await_holding_lock)]
-    async fn run(&self, http: &Http, cmd: &CommandInteraction) -> anyhow::Result<()> {
+    async fn run(&self, http: Arc<Http>, cmd: &CommandInteraction) -> anyhow::Result<()> {
         // Create output/print/attachment channels for this execution
         let (output_tx, output_rx) = flume::unbounded::<String>();
         let (print_tx, print_rx) = flume::unbounded::<String>();

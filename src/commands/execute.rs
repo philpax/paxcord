@@ -43,7 +43,7 @@ impl CommandHandler for Handler {
         Ok(())
     }
 
-    async fn run(&self, http: &Http, cmd: &CommandInteraction) -> anyhow::Result<()> {
+    async fn run(&self, http: Arc<Http>, cmd: &CommandInteraction) -> anyhow::Result<()> {
         let code = cmd
             .data
             .options
@@ -80,7 +80,7 @@ impl CommandHandler for MsgHandler {
         Ok(())
     }
 
-    async fn run(&self, http: &Http, cmd: &CommandInteraction) -> anyhow::Result<()> {
+    async fn run(&self, http: Arc<Http>, cmd: &CommandInteraction) -> anyhow::Result<()> {
         let message_id = cmd
             .data
             .options
@@ -90,7 +90,7 @@ impl CommandHandler for MsgHandler {
 
         let message = cmd
             .channel_id
-            .message(http, message_id.parse::<u64>()?)
+            .message(&*http, message_id.parse::<u64>()?)
             .await?;
 
         self.0.execute_code(http, cmd, &message.content).await
@@ -121,7 +121,7 @@ impl SharedState {
 
     async fn execute_code(
         &self,
-        http: &Http,
+        http: Arc<Http>,
         cmd: &CommandInteraction,
         code: &str,
     ) -> anyhow::Result<()> {
@@ -141,7 +141,7 @@ impl SharedState {
         let thread = match load_async_expression::<Option<String>>(&lua, code) {
             Ok(thread) => thread,
             Err(err) => {
-                cmd.create(http, &format!("Error: {err}")).await?;
+                cmd.create(&http, &format!("Error: {err}")).await?;
                 return Ok(());
             }
         };
