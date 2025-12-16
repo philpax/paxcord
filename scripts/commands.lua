@@ -521,7 +521,15 @@ discord.register_command {
 -- Reply handler for /ask - continues the conversation
 discord.register_reply_handler("ask", function(chain)
 	local model = chain.options.model
-	local original_seed = chain.options.seed or math.random(1, 2147483647)
+	local original_seed = chain.options.seed
+
+	-- Require original parameters
+	if not model then
+		error("Original model parameter not available - cannot continue conversation")
+	end
+	if not original_seed then
+		error("Original seed parameter not available - cannot continue conversation")
+	end
 
 	output("Continuing conversation...")
 
@@ -555,8 +563,12 @@ end)
 
 -- Reply handler for /paint - regenerates image with new prompt
 discord.register_reply_handler("paint", function(chain)
-	-- Get the original options
+	-- Get the original options - require model
 	local original_model = chain.options.model
+	if not original_model then
+		error("Original model parameter not available - cannot regenerate image")
+	end
+
 	local original_width = chain.options.width
 	local original_height = chain.options.height
 	local original_negative = chain.options.negative or "text, watermark, blurry"
@@ -578,8 +590,8 @@ discord.register_reply_handler("paint", function(chain)
 	-- Generate a new seed for variation
 	local new_seed = math.random(1, 2147483647)
 
-	-- Use the original model or get a random one
-	local model_info = original_model and get_model_info(original_model) or get_random_model()
+	-- Get model info from the original model
+	local model_info = get_model_info(original_model)
 
 	-- Generate the image with the new prompt
 	generate_image(new_prompt, original_negative, new_seed, model_info, original_width, original_height)
