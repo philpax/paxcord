@@ -47,14 +47,15 @@ pub fn register(
     })?;
 
     let reply_registry_clone = reply_handler_registry.clone();
-    let register_reply_handler =
-        lua.create_function(move |_lua, (command_name, handler): (String, LuaFunction)| {
+    let register_reply_handler = lua.create_function(
+        move |_lua, (command_name, handler): (String, LuaFunction)| {
             reply_registry_clone
                 .lock()
                 .unwrap()
                 .insert(command_name, handler);
             Ok(())
-        })?;
+        },
+    )?;
 
     discord.set("register_command", register_command)?;
     discord.set("register_reply_handler", register_reply_handler)?;

@@ -84,7 +84,9 @@ async fn main() -> anyhow::Result<()> {
 
     let mut client = Client::builder(
         discord_token,
-        GatewayIntents::default() | GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT,
+        GatewayIntents::default()
+            | GatewayIntents::GUILD_MESSAGES
+            | GatewayIntents::MESSAGE_CONTENT,
     )
     .event_handler(Handler {
         config: config.clone(),
@@ -94,8 +96,8 @@ async fn main() -> anyhow::Result<()> {
         reply_handler_registry: reply_handler_registry.clone(),
         global_lua: global_lua.clone(),
     })
-        .await
-        .context("Error creating client")?;
+    .await
+    .context("Error creating client")?;
 
     if let Err(why) = client.start().await {
         println!("Client error: {why:?}");
@@ -189,15 +191,13 @@ impl EventHandler for Handler {
         }
 
         // Check if this is a reply to another message
-        if let Some(ref msg_ref) = msg.message_reference {
-            if let Some(referenced_msg_id) = msg_ref.message_id {
-                if let Err(err) = self
-                    .handle_reply(ctx.http.clone(), &msg, referenced_msg_id)
-                    .await
-                {
-                    eprintln!("Error handling reply: {err}");
-                }
-            }
+        if let Some(ref msg_ref) = msg.message_reference
+            && let Some(referenced_msg_id) = msg_ref.message_id
+            && let Err(err) = self
+                .handle_reply(ctx.http.clone(), &msg, referenced_msg_id)
+                .await
+        {
+            eprintln!("Error handling reply: {err}");
         }
     }
 }
@@ -255,8 +255,8 @@ impl Handler {
     ) -> anyhow::Result<()> {
         use crate::{
             interaction_context::OptionValue,
-            lua::{LuaOutputChannels, execute_lua_reply_thread},
             lua::extensions::{Attachment, TemporaryChannelUpdate},
+            lua::{LuaOutputChannels, execute_lua_reply_thread},
             reply_handler::{ReplyChain, build_message_chain},
         };
 
@@ -276,11 +276,11 @@ impl Handler {
                 // Find a bot message with cached context
                 let mut found_context = None;
                 for chain_msg in &chain {
-                    if chain_msg.is_bot {
-                        if let Some(ctx) = self.interaction_context_store.get(&chain_msg.id) {
-                            found_context = Some(ctx);
-                            break;
-                        }
+                    if chain_msg.is_bot
+                        && let Some(ctx) = self.interaction_context_store.get(&chain_msg.id)
+                    {
+                        found_context = Some(ctx);
+                        break;
                     }
                 }
 
@@ -390,7 +390,8 @@ impl Handler {
         .await?;
 
         // Store the context for the new response message so the chain can continue
-        self.interaction_context_store.store(response_msg_id, context);
+        self.interaction_context_store
+            .store(response_msg_id, context);
 
         Ok(())
     }
