@@ -3,9 +3,10 @@ use std::sync::Arc;
 use crate::{ai::Ai, commands::lua_command::LuaCommandRegistry, currency::CurrencyConverter};
 
 mod discord_extension;
+pub use discord_extension::LuaReplyHandlerRegistry;
 
 mod executor;
-pub use executor::{LuaOutputChannels, execute_lua_thread};
+pub use executor::{LuaOutputChannels, execute_lua_reply_thread, execute_lua_thread};
 
 pub mod extensions;
 
@@ -44,10 +45,11 @@ pub fn create_global_lua_state(
     print_tx: flume::Sender<String>,
     attachment_tx: flume::Sender<extensions::Attachment>,
     lua_command_registry: LuaCommandRegistry,
+    lua_reply_handler_registry: LuaReplyHandlerRegistry,
 ) -> mlua::Result<mlua::Lua> {
     let lua =
         create_barebones_lua_state(ai, currency_converter, output_tx, print_tx, attachment_tx)?;
-    discord_extension::register(&lua, lua_command_registry)?;
+    discord_extension::register(&lua, lua_command_registry, lua_reply_handler_registry)?;
     load_lua_file(&lua, "scripts/commands.lua")?;
 
     Ok(lua)

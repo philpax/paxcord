@@ -5,7 +5,7 @@ use serenity::{
     Client,
     all::{
         Command, Context, CreateInteractionResponse, CreateInteractionResponseMessage,
-        EventHandler, Http, Interaction, MessageId, Ready,
+        EventHandler, Http, Interaction, Message, MessageId, Ready,
     },
     async_trait,
     model::prelude::GatewayIntents,
@@ -17,13 +17,19 @@ mod commands;
 mod config;
 mod constant;
 mod currency;
+mod interaction_context;
 mod lua;
 mod outputter;
+mod reply_handler;
 mod util;
 
 use config::Configuration;
 
-use crate::{commands::lua_command::LuaCommandRegistry, lua::create_global_lua_state};
+use crate::{
+    commands::lua_command::LuaCommandRegistry,
+    interaction_context::InteractionContextStore,
+    lua::{LuaReplyHandlerRegistry, create_global_lua_state},
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -39,8 +45,11 @@ async fn main() -> anyhow::Result<()> {
 
     let (cancel_tx, cancel_rx) = flume::unbounded::<MessageId>();
 
-    // Create command registry and global Lua state
+    // Create command registry, reply handler registry, and interaction context store
     let command_registry = LuaCommandRegistry::default();
+    let reply_handler_registry = LuaReplyHandlerRegistry::default();
+    let interaction_context_store = Arc::new(InteractionContextStore::default());
+
     // We intentionally do not use _output_rx/_attachment_rx, as we don't care about temporary output at the global level
     let (output_tx, _output_rx) = flume::unbounded::<String>();
     let (print_tx, print_rx) = flume::unbounded::<String>();
@@ -59,6 +68,7 @@ async fn main() -> anyhow::Result<()> {
         print_tx,
         attachment_tx,
         command_registry.clone(),
+        reply_handler_registry.clone(),
     )?;
 
     // Build handlers
@@ -69,13 +79,21 @@ async fn main() -> anyhow::Result<()> {
         currency_converter.clone(),
         global_lua.clone(),
         command_registry.clone(),
+        interaction_context_store.clone(),
     );
 
-    let mut client = Client::builder(discord_token, GatewayIntents::default())
-        .event_handler(Handler {
-            handlers: Arc::new(std::sync::Mutex::new(handlers)),
-            cancel_tx,
-        })
+    let mut client = Client::builder(
+        discord_token,
+        GatewayIntents::default() | GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT,
+    )
+    .event_handler(Handler {
+        config: config.clone(),
+        handlers: Arc::new(std::sync::Mutex::new(handlers)),
+        cancel_tx,
+        interaction_context_store: interaction_context_store.clone(),
+        reply_handler_registry: reply_handler_registry.clone(),
+        global_lua: global_lua.clone(),
+    })
         .await
         .context("Error creating client")?;
 
@@ -93,6 +111,7 @@ fn build_handlers(
     currency_converter: Arc<currency::CurrencyConverter>,
     global_lua: mlua::Lua,
     command_registry: LuaCommandRegistry,
+    interaction_context_store: Arc<InteractionContextStore>,
 ) -> HashMap<String, Arc<dyn commands::CommandHandler>> {
     let mut handlers: HashMap<String, Arc<dyn commands::CommandHandler>> = HashMap::new();
 
@@ -123,6 +142,7 @@ fn build_handlers(
                 config.discord.clone(),
                 command_registry.clone(),
                 global_lua.clone(),
+                interaction_context_store.clone(),
             )),
         );
     }
@@ -131,8 +151,12 @@ fn build_handlers(
 }
 
 pub struct Handler {
+    config: Configuration,
     handlers: Arc<std::sync::Mutex<HashMap<String, Arc<dyn commands::CommandHandler>>>>,
     cancel_tx: flume::Sender<MessageId>,
+    interaction_context_store: Arc<InteractionContextStore>,
+    reply_handler_registry: LuaReplyHandlerRegistry,
+    global_lua: mlua::Lua,
 }
 #[async_trait]
 impl EventHandler for Handler {
@@ -155,6 +179,25 @@ impl EventHandler for Handler {
                 .create_or_edit(&ctx.http, &format!("Error: {err}"))
                 .await
                 .unwrap();
+        }
+    }
+
+    async fn message(&self, ctx: Context, msg: Message) {
+        // Ignore messages from bots
+        if msg.author.bot {
+            return;
+        }
+
+        // Check if this is a reply to another message
+        if let Some(ref msg_ref) = msg.message_reference {
+            if let Some(referenced_msg_id) = msg_ref.message_id {
+                if let Err(err) = self
+                    .handle_reply(ctx.http.clone(), &msg, referenced_msg_id)
+                    .await
+                {
+                    eprintln!("Error handling reply: {err}");
+                }
+            }
         }
     }
 }
@@ -201,6 +244,154 @@ impl Handler {
             }
             _ => {}
         };
+        Ok(())
+    }
+
+    async fn handle_reply(
+        &self,
+        http: Arc<Http>,
+        user_msg: &Message,
+        referenced_msg_id: MessageId,
+    ) -> anyhow::Result<()> {
+        use crate::{
+            interaction_context::OptionValue,
+            lua::{LuaOutputChannels, execute_lua_reply_thread},
+            lua::extensions::{Attachment, TemporaryChannelUpdate},
+            reply_handler::{ReplyChain, build_message_chain},
+        };
+
+        // First, check if the referenced message is in our interaction context store
+        let context = match self.interaction_context_store.get(&referenced_msg_id) {
+            Some(ctx) => ctx,
+            None => {
+                // Try to fetch the message and walk up the chain to find a cached context
+                let referenced_msg = user_msg
+                    .channel_id
+                    .message(&http, referenced_msg_id)
+                    .await?;
+
+                // Build the chain and look for any cached context
+                let chain = build_message_chain(&http, &referenced_msg, 50).await?;
+
+                // Find a bot message with cached context
+                let mut found_context = None;
+                for chain_msg in &chain {
+                    if chain_msg.is_bot {
+                        if let Some(ctx) = self.interaction_context_store.get(&chain_msg.id) {
+                            found_context = Some(ctx);
+                            break;
+                        }
+                    }
+                }
+
+                match found_context {
+                    Some(ctx) => ctx,
+                    None => {
+                        // No cached context found - ignore this reply
+                        return Ok(());
+                    }
+                }
+            }
+        };
+
+        // Check if there's a handler for this command
+        let handler = self
+            .reply_handler_registry
+            .lock()
+            .unwrap()
+            .get(&context.command_name)
+            .cloned();
+
+        let Some(handler) = handler else {
+            // No handler registered for this command
+            return Ok(());
+        };
+
+        // Build the full message chain
+        let chain = build_message_chain(&http, user_msg, 50).await?;
+
+        // Create the ReplyChain
+        let reply_chain = ReplyChain {
+            command_name: context.command_name.clone(),
+            options: context.options.clone(),
+            messages: chain,
+        };
+
+        // Create output channels for this execution
+        let (output_tx, output_rx) = flume::unbounded::<String>();
+        let (print_tx, print_rx) = flume::unbounded::<String>();
+        let (attachment_tx, attachment_rx) = flume::unbounded::<Attachment>();
+
+        // Build the Lua table for the reply chain
+        let lua = &self.global_lua;
+
+        let chain_table = lua.create_table()?;
+
+        // Set command_name
+        chain_table.set("command_name", reply_chain.command_name.clone())?;
+
+        // Set options
+        let options_table = lua.create_table()?;
+        for (key, value) in &reply_chain.options {
+            match value {
+                OptionValue::String(s) => options_table.set(key.as_str(), s.clone())?,
+                OptionValue::Integer(i) => options_table.set(key.as_str(), *i)?,
+                OptionValue::Number(n) => options_table.set(key.as_str(), *n)?,
+                OptionValue::Boolean(b) => options_table.set(key.as_str(), *b)?,
+            }
+        }
+        chain_table.set("options", options_table)?;
+
+        // Set messages array
+        let messages_table = lua.create_table()?;
+        for (i, msg) in reply_chain.messages.iter().enumerate() {
+            let msg_table = lua.create_table()?;
+            msg_table.set("id", msg.id.get().to_string())?;
+            msg_table.set("content", msg.content.clone())?;
+            msg_table.set("author_id", msg.author_id.get().to_string())?;
+            msg_table.set("author_name", msg.author_name.clone())?;
+            msg_table.set("is_bot", msg.is_bot)?;
+            msg_table.set("channel_id", msg.channel_id.get().to_string())?;
+            if let Some(guild_id) = msg.guild_id {
+                msg_table.set("guild_id", guild_id.get().to_string())?;
+            }
+
+            // Set attachments
+            let attachments_table = lua.create_table()?;
+            for (j, url) in msg.attachments.iter().enumerate() {
+                attachments_table.set(j + 1, url.clone())?;
+            }
+            msg_table.set("attachments", attachments_table)?;
+
+            messages_table.set(i + 1, msg_table)?;
+        }
+        chain_table.set("messages", messages_table)?;
+
+        // Create the thread and register channels
+        let thread = lua.create_thread(handler)?;
+        let _temporary_channel_update =
+            TemporaryChannelUpdate::new(lua.clone(), &thread, output_tx, print_tx, attachment_tx)?;
+
+        let thread = thread.into_async::<Option<String>>(chain_table)?;
+
+        // Execute and get the response message ID
+        let response_msg_id = execute_lua_reply_thread(
+            http.clone(),
+            user_msg,
+            user_msg.author.id,
+            &self.config.discord,
+            thread,
+            LuaOutputChannels {
+                output_rx,
+                print_rx,
+                attachment_rx,
+            },
+        )
+        .await?;
+
+        // Store the context for the new response message so the chain can continue
+        self.interaction_context_store.store(response_msg_id, context);
+
         Ok(())
     }
 }

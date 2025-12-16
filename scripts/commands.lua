@@ -517,3 +517,70 @@ discord.register_command {
 		generate_image(prompt, negative, seed, model_info, width, height)
 	end,
 }
+
+-- Reply handler for /ask - continues the conversation
+discord.register_reply_handler("ask", function(chain)
+	local model = chain.options.model
+	local original_seed = chain.options.seed or math.random(1, 2147483647)
+
+	output("Continuing conversation...")
+
+	-- Build the message history from the chain
+	local messages = {
+		llm.system("You are a helpful assistant."),
+	}
+
+	-- Add all messages from the chain
+	for _, msg in ipairs(chain.messages) do
+		if msg.is_bot then
+			-- Bot messages are assistant responses
+			-- Strip the metadata footer (everything after the last "\n\n-#")
+			local content = msg.content
+			local footer_pos = content:find("\n\n%-#[^\n]*$")
+			if footer_pos then
+				content = content:sub(1, footer_pos - 1)
+			end
+			table.insert(messages, llm.assistant(content))
+		else
+			-- User messages
+			table.insert(messages, llm.user(msg.content))
+		end
+	end
+
+	-- Stream the response
+	local response = string.trim(stream_llm_response(messages, model, original_seed))
+
+	output(response .. "\n\n-# Model: " .. model .. " | Seed: " .. original_seed .. " | Continued conversation")
+end)
+
+-- Reply handler for /paint - regenerates image with new prompt
+discord.register_reply_handler("paint", function(chain)
+	-- Get the original options
+	local original_model = chain.options.model
+	local original_width = chain.options.width
+	local original_height = chain.options.height
+	local original_negative = chain.options.negative or "text, watermark, blurry"
+
+	-- Get the new prompt from the latest user message
+	local new_prompt = nil
+	for i = #chain.messages, 1, -1 do
+		if not chain.messages[i].is_bot then
+			new_prompt = chain.messages[i].content
+			break
+		end
+	end
+
+	if not new_prompt or new_prompt == "" then
+		output("Please provide a prompt in your reply.")
+		return
+	end
+
+	-- Generate a new seed for variation
+	local new_seed = math.random(1, 2147483647)
+
+	-- Use the original model or get a random one
+	local model_info = original_model and get_model_info(original_model) or get_random_model()
+
+	-- Generate the image with the new prompt
+	generate_image(new_prompt, original_negative, new_seed, model_info, original_width, original_height)
+end)
