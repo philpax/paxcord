@@ -43,6 +43,7 @@ pub async fn execute_lua_reply_thread(
     discord_config: &config::Discord,
     thread: mlua::AsyncThread<Option<String>>,
     channels: LuaOutputChannels,
+    cancel_rx: Option<flume::Receiver<MessageId>>,
 ) -> anyhow::Result<MessageId> {
     let outputter = OutputterHandle::new_reply(
         http,
@@ -53,7 +54,7 @@ pub async fn execute_lua_reply_thread(
     )
     .await?;
 
-    execute_lua_thread_impl(outputter, thread, channels, None).await
+    execute_lua_thread_impl(outputter, thread, channels, cancel_rx).await
 }
 
 /// Common implementation for executing Lua threads with output handling

@@ -94,6 +94,7 @@ async fn main() -> anyhow::Result<()> {
         config: config.clone(),
         handlers: Arc::new(std::sync::Mutex::new(handlers)),
         cancel_tx,
+        cancel_rx,
         interaction_context_store: interaction_context_store.clone(),
         reply_handler_registry: reply_handler_registry.clone(),
         global_lua: global_lua.clone(),
@@ -158,6 +159,7 @@ pub struct Handler {
     config: Configuration,
     handlers: Arc<std::sync::Mutex<HashMap<String, Arc<dyn commands::CommandHandler>>>>,
     cancel_tx: flume::Sender<MessageId>,
+    cancel_rx: flume::Receiver<MessageId>,
     interaction_context_store: Arc<InteractionContextStore>,
     reply_handler_registry: LuaReplyHandlerRegistry,
     global_lua: mlua::Lua,
@@ -388,6 +390,7 @@ impl Handler {
                 print_rx,
                 attachment_rx,
             },
+            Some(self.cancel_rx.clone()),
         )
         .await?;
 
