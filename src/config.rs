@@ -1,23 +1,11 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(default)]
 pub struct Configuration {
     pub authentication: Authentication,
     pub discord: Discord,
-}
-impl Default for Configuration {
-    fn default() -> Self {
-        Self {
-            authentication: Authentication {
-                discord_token: None,
-                openai_api_server: None,
-                openai_api_key: None,
-            },
-            discord: Discord::default(),
-        }
-    }
 }
 impl Configuration {
     const FILENAME: &str = "config.toml";
@@ -41,7 +29,8 @@ impl Configuration {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(default)]
 pub struct Authentication {
     pub discord_token: Option<String>,
     pub openai_api_server: Option<String>,
@@ -49,11 +38,14 @@ pub struct Authentication {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 pub struct Discord {
     /// Low values will result in you getting throttled by Discord
     pub message_update_interval_ms: u64,
     /// Whether or not to replace '\n' with newlines
     pub replace_newlines: bool,
+    /// Size of the LRU cache for interaction contexts (for reply handling)
+    pub interaction_context_cache_size: usize,
 }
 
 impl Default for Discord {
@@ -61,6 +53,7 @@ impl Default for Discord {
         Self {
             message_update_interval_ms: 1000,
             replace_newlines: true,
+            interaction_context_cache_size: 10000,
         }
     }
 }

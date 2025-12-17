@@ -1,7 +1,90 @@
 -- scripts/commands.lua
 -- Discord command definitions using the discord.register_command API
 
+-- ============================================================================
+-- Footer serialization - roundtrippable structured format
+-- Format: -# @key=type:value|key2=type:value2|...
+-- Types: s=string, i=integer, n=number, b=boolean
+-- ============================================================================
+local footer = {}
+
+-- Serialize a params table to footer string
+function footer.serialize(params)
+	local parts = {}
+	local keys = {}
+	for k in pairs(params) do
+		table.insert(keys, k)
+	end
+	table.sort(keys)
+
+	for _, k in ipairs(keys) do
+		local v = params[k]
+		local encoded
+		if type(v) == "string" then
+			-- Escape special chars: \ | =
+			encoded = "s:" .. v:gsub("\\", "\\\\"):gsub("|", "\\p"):gsub("=", "\\e")
+		elseif type(v) == "number" then
+			if math.floor(v) == v then
+				encoded = "i:" .. tostring(math.floor(v))
+			else
+				encoded = "n:" .. tostring(v)
+			end
+		elseif type(v) == "boolean" then
+			encoded = "b:" .. (v and "1" or "0")
+		end
+		if encoded then
+			table.insert(parts, k .. "=" .. encoded)
+		end
+	end
+	return "\n\n-# @" .. table.concat(parts, "|")
+end
+
+-- Deserialize footer string back to params table
+function footer.deserialize(content)
+	local data = content:match("\n\n%-# @(.+)$")
+	if not data then
+		return nil
+	end
+
+	local result = {}
+	for pair in data:gmatch("[^|]+") do
+		local key, type_val = pair:match("([^=]+)=(.+)")
+		if key and type_val then
+			local t, v = type_val:match("^(.):(.*)$")
+			if t == "s" then
+				-- Unescape: \\ -> \, \p -> |, \e -> =
+				result[key] = v:gsub("\\e", "="):gsub("\\p", "|"):gsub("\\\\", "\\")
+			elseif t == "i" or t == "n" then
+				result[key] = tonumber(v)
+			elseif t == "b" then
+				result[key] = v == "1"
+			end
+		end
+	end
+	return result
+end
+
+-- Strip footer from content (for building message history)
+function footer.strip(content)
+	local footer_pos = content:find("\n\n%-# @[^\n]*$")
+	if footer_pos then
+		return content:sub(1, footer_pos - 1)
+	end
+	return content
+end
+
+-- ============================================================================
+-- Command-specific defaults
+-- ============================================================================
+local ask = {}
+ask.default_system = "You are a helpful assistant."
+
+local paint = {}
+paint.default_negative = "text, watermark, blurry"
+
+-- ============================================================================
 -- Currency data and choices for the convert command
+-- ============================================================================
 local currency_data = {
 	{ "USD", "US Dollar" },
 	{ "EUR", "Euro" },
@@ -61,6 +144,12 @@ discord.register_command {
 			required = true,
 		},
 		{
+			name = "system",
+			description = "System prompt (default: '" .. ask.default_system .. "')",
+			type = "string",
+			required = false,
+		},
+		{
 			name = "seed",
 			description = "Random seed for deterministic output",
 			type = "integer",
@@ -72,18 +161,19 @@ discord.register_command {
 	execute = function(interaction)
 		local model = interaction.options.model
 		local prompt = interaction.options.prompt
+		local system = interaction.options.system or ask.default_system
 		local seed = interaction.options.seed or math.random(1, 2147483647)
 
 		output("Generating...")
 
 		local messages = {
-			llm.system("You are a helpful assistant."),
+			llm.system(system),
 			llm.user(prompt),
 		}
 
 		local response = string.trim(stream_llm_response(messages, model, seed))
 
-		output(response .. "\n\n-# Model: " .. model .. " | Seed: " .. seed)
+		output(response .. footer.serialize({ model = model, seed = seed, system = system }))
 	end,
 }
 
@@ -300,16 +390,13 @@ local function generate_image(prompt, negative, seed, model_info, width, height)
 		for i, image_data in ipairs(images) do
 			attach("image_" .. seed .. "_" .. i .. ".png", image_data)
 		end
-		output(
-			string.format(
-				"Prompt: %s | Model: %s | Size: %dx%d | Seed: %d",
-				prompt,
-				model_info.name,
-				width,
-				height,
-				seed
-			)
-		)
+		output(footer.serialize({
+			prompt = prompt,
+			model = model_info.filename,
+			width = width,
+			height = height,
+			seed = seed,
+		}))
 	else
 		output("No images were generated.")
 	end
@@ -517,3 +604,114 @@ discord.register_command {
 		generate_image(prompt, negative, seed, model_info, width, height)
 	end,
 }
+
+-- Reply handler for /ask - continues the conversation
+discord.register_reply_handler("ask", function(chain)
+	-- Try to get parameters from options first
+	local model = chain.options.model
+	local original_seed = chain.options.seed
+	local system = chain.options.system
+
+	-- If options not available, try to parse from first bot message footer
+	if not model or not original_seed then
+		for _, msg in ipairs(chain.messages) do
+			if msg.is_bot then
+				local parsed = footer.deserialize(msg.content)
+				if parsed then
+					model = model or parsed.model
+					original_seed = original_seed or parsed.seed
+					system = system or parsed.system
+					break
+				end
+			end
+		end
+	end
+
+	-- Require parameters
+	if not model then
+		error("Original model parameter not available - cannot continue conversation")
+	end
+	if not original_seed then
+		error("Original seed parameter not available - cannot continue conversation")
+	end
+
+	-- Default system prompt if still not found
+	system = system or ask.default_system
+
+	output("Continuing conversation...")
+
+	-- Build the message history from the chain
+	local messages = {
+		llm.system(system),
+	}
+
+	-- Add all messages from the chain
+	for _, msg in ipairs(chain.messages) do
+		if msg.is_bot then
+			-- Bot messages are assistant responses - strip footer
+			table.insert(messages, llm.assistant(footer.strip(msg.content)))
+		else
+			-- User messages
+			table.insert(messages, llm.user(msg.content))
+		end
+	end
+
+	-- Stream the response
+	local response = string.trim(stream_llm_response(messages, model, original_seed))
+
+	output(response .. footer.serialize({ model = model, seed = original_seed, system = system }))
+end)
+
+-- Reply handler for /paint - regenerates image with new prompt
+discord.register_reply_handler("paint", function(chain)
+	-- Try to get parameters from options first
+	local original_model = chain.options.model
+	local original_width = chain.options.width
+	local original_height = chain.options.height
+	local original_negative = chain.options.negative
+
+	-- If model not available, try to parse from first bot message footer
+	if not original_model then
+		for _, msg in ipairs(chain.messages) do
+			if msg.is_bot then
+				local parsed = footer.deserialize(msg.content)
+				if parsed then
+					original_model = parsed.model
+					original_width = original_width or parsed.width
+					original_height = original_height or parsed.height
+					break
+				end
+			end
+		end
+	end
+
+	-- Require model
+	if not original_model then
+		error("Original model parameter not available - cannot regenerate image")
+	end
+
+	-- Default negative prompt
+	original_negative = original_negative or paint.default_negative
+
+	-- Get the new prompt from the latest user message
+	local new_prompt = nil
+	for i = #chain.messages, 1, -1 do
+		if not chain.messages[i].is_bot then
+			new_prompt = chain.messages[i].content
+			break
+		end
+	end
+
+	if not new_prompt or new_prompt == "" then
+		error("Please provide a prompt in your reply.")
+	end
+
+	-- Generate a new seed for variation
+	local new_seed = math.random(1, 2147483647)
+
+	-- Get model info from the original model
+	local model_info = get_model_info(original_model)
+
+	-- Generate the image with the new prompt
+	generate_image(new_prompt, original_negative, new_seed, model_info, original_width, original_height)
+end)

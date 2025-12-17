@@ -158,7 +158,9 @@ impl SharedState {
             },
             Some(self.cancel_rx.clone()),
         )
-        .await
+        .await?;
+
+        Ok(())
     }
 }
 

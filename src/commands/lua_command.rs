@@ -3,6 +3,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use mlua::LuaSerdeExt as _;
+use serde::Serialize;
 use serenity::all::{
     CommandDataOptionValue, CommandInteraction, CommandOptionType, CreateCommand,
     CreateCommandOption, Http,
@@ -10,17 +12,25 @@ use serenity::all::{
 
 use crate::{
     config,
+    interaction_context::{InteractionContext, InteractionContextStore, OptionValue},
     lua::{
         LuaOutputChannels, execute_lua_thread,
         extensions::{Attachment, TemporaryChannelUpdate},
     },
 };
 
+/// Lua-serializable interaction data
+#[derive(Serialize)]
+struct LuaInteraction {
+    options: HashMap<String, OptionValue>,
+}
+
 pub struct Handler {
     name: String,
     discord_config: config::Discord,
     command_registry: LuaCommandRegistry,
     global_lua: mlua::Lua,
+    interaction_context_store: Arc<InteractionContextStore>,
 }
 impl Handler {
     pub fn new(
@@ -28,12 +38,14 @@ impl Handler {
         discord_config: config::Discord,
         command_registry: LuaCommandRegistry,
         global_lua: mlua::Lua,
+        interaction_context_store: Arc<InteractionContextStore>,
     ) -> Self {
         Self {
             name,
             discord_config,
             command_registry,
             global_lua,
+            interaction_context_store,
         }
     }
 }
@@ -63,33 +75,25 @@ impl super::CommandHandler for Handler {
         // Lock the global Lua state for this execution (held for entire duration)
         let lua = &self.global_lua;
 
-        // Build interaction table
-        let interaction = lua.create_table()?;
-        let options = lua.create_table()?;
-
-        // Parse options from Discord interaction
+        // Parse options from Discord interaction into context storage
+        let mut context_options = HashMap::new();
         for opt in &cmd.data.options {
-            let value = &opt.value;
-            match value {
-                CommandDataOptionValue::String(s) => {
-                    options.set(opt.name.as_str(), s.clone())?;
-                }
-                CommandDataOptionValue::Integer(i) => {
-                    options.set(opt.name.as_str(), *i)?;
-                }
-                CommandDataOptionValue::Number(n) => {
-                    options.set(opt.name.as_str(), *n)?;
-                }
-                CommandDataOptionValue::Boolean(b) => {
-                    options.set(opt.name.as_str(), *b)?;
-                }
-                _ => {
-                    // For now, skip complex types like User, Channel, Role, Attachment
-                }
+            let value = match &opt.value {
+                CommandDataOptionValue::String(s) => Some(OptionValue::String(s.clone())),
+                CommandDataOptionValue::Integer(i) => Some(OptionValue::Integer(*i)),
+                CommandDataOptionValue::Number(n) => Some(OptionValue::Number(*n)),
+                CommandDataOptionValue::Boolean(b) => Some(OptionValue::Boolean(*b)),
+                _ => None, // Skip complex types like User, Channel, Role, Attachment
+            };
+            if let Some(v) = value {
+                context_options.insert(opt.name.clone(), v);
             }
         }
 
-        interaction.set("options", options)?;
+        // Build interaction table using serde
+        let interaction = lua.to_value(&LuaInteraction {
+            options: context_options.clone(),
+        })?;
 
         let handler = self
             .command_registry
@@ -111,7 +115,7 @@ impl super::CommandHandler for Handler {
         let thread = thread.into_async::<Option<String>>(interaction)?;
 
         // Execute the Lua thread using the shared executor (no cancellation support)
-        execute_lua_thread(
+        let message_id = execute_lua_thread(
             http,
             cmd,
             &self.discord_config,
@@ -123,7 +127,19 @@ impl super::CommandHandler for Handler {
             },
             None,
         )
-        .await
+        .await?;
+
+        // Store the interaction context for reply handling
+        let context = InteractionContext {
+            command_name: self.name.clone(),
+            options: context_options,
+            user_id: cmd.user.id,
+            channel_id: cmd.channel_id,
+            guild_id: cmd.guild_id,
+        };
+        self.interaction_context_store.store(message_id, context);
+
+        Ok(())
     }
 }
 

@@ -1,12 +1,24 @@
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
 use mlua::prelude::*;
 use serenity::all::CommandOptionType;
 
 use crate::commands::lua_command::{LuaCommand, LuaCommandOption, LuaCommandRegistry};
 
-pub fn register(lua: &Lua, registry: LuaCommandRegistry) -> LuaResult<()> {
+/// Registry for reply handlers (command name -> Lua handler function)
+pub type LuaReplyHandlerRegistry = Arc<Mutex<HashMap<String, LuaFunction>>>;
+
+pub fn register(
+    lua: &Lua,
+    command_registry: LuaCommandRegistry,
+    reply_handler_registry: LuaReplyHandlerRegistry,
+) -> LuaResult<()> {
     let discord = lua.create_table()?;
 
-    let registry_clone = registry.clone();
+    let registry_clone = command_registry.clone();
     let register_command = lua.create_function(move |_lua, spec: LuaTable| {
         let name: String = spec.get("name")?;
         let description: String = spec.get("description")?;
@@ -34,7 +46,19 @@ pub fn register(lua: &Lua, registry: LuaCommandRegistry) -> LuaResult<()> {
         Ok(())
     })?;
 
+    let reply_registry_clone = reply_handler_registry.clone();
+    let register_reply_handler = lua.create_function(
+        move |_lua, (command_name, handler): (String, LuaFunction)| {
+            reply_registry_clone
+                .lock()
+                .unwrap()
+                .insert(command_name, handler);
+            Ok(())
+        },
+    )?;
+
     discord.set("register_command", register_command)?;
+    discord.set("register_reply_handler", register_reply_handler)?;
     lua.globals().set("discord", discord)?;
 
     Ok(())

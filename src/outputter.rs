@@ -25,6 +25,7 @@ pub struct OutputterHandle {
 }
 
 impl OutputterHandle {
+    /// Create a new outputter for a slash command interaction
     pub async fn new(
         http: Arc<Http>,
         cmd: &CommandInteraction,
@@ -43,6 +44,57 @@ impl OutputterHandle {
         let starting_message = cmd.get_response(&http).await?;
         let starting_message_id = starting_message.id;
         let user_id = cmd.user.id;
+
+        let (tx, rx) = flume::unbounded();
+        let (ready_tx, ready_rx) = oneshot::channel();
+
+        let join_handle = tokio::spawn(async move {
+            let mut outputter = Outputter {
+                http,
+                user_id,
+                messages: vec![starting_message],
+                chunks: vec![],
+                pending_attachments: vec![],
+                in_terminal_state: false,
+                last_update: std::time::Instant::now(),
+                last_update_duration: std::time::Duration::from_millis(update_interval_ms),
+            };
+
+            // Signal that we're ready
+            let _ = ready_tx.send(());
+
+            outputter.run(rx).await
+        });
+
+        // Wait for the task to be ready
+        let _ = ready_rx.await;
+
+        Ok(Self {
+            tx,
+            starting_message_id,
+            join_handle,
+        })
+    }
+
+    /// Create a new outputter that replies to an existing message
+    pub async fn new_reply(
+        http: Arc<Http>,
+        reply_to: &Message,
+        user_id: UserId,
+        update_interval_ms: u64,
+        initial_message: &str,
+    ) -> anyhow::Result<Self> {
+        let starting_message = reply_to
+            .channel_id
+            .send_message(
+                &http,
+                CreateMessage::new()
+                    .reference_message(reply_to)
+                    .content(initial_message)
+                    .allowed_mentions(CreateAllowedMentions::new()),
+            )
+            .await?;
+        let starting_message_id = starting_message.id;
 
         let (tx, rx) = flume::unbounded();
         let (ready_tx, ready_rx) = oneshot::channel();

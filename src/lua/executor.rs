@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use serenity::{
-    all::{CommandInteraction, Http, MessageId},
+    all::{CommandInteraction, Http, Message, MessageId, UserId},
     futures::StreamExt as _,
 };
 
@@ -15,14 +15,15 @@ pub struct LuaOutputChannels {
 }
 
 /// Executes a Lua async thread with output handling and optional cancellation support.
+/// Returns the message ID of the bot's response.
 pub async fn execute_lua_thread(
     http: Arc<Http>,
     cmd: &CommandInteraction,
     discord_config: &config::Discord,
-    mut thread: mlua::AsyncThread<Option<String>>,
+    thread: mlua::AsyncThread<Option<String>>,
     channels: LuaOutputChannels,
-    mut cancel_rx: Option<flume::Receiver<MessageId>>,
-) -> anyhow::Result<()> {
+    cancel_rx: Option<flume::Receiver<MessageId>>,
+) -> anyhow::Result<MessageId> {
     let outputter = OutputterHandle::new(
         http,
         cmd,
@@ -31,6 +32,38 @@ pub async fn execute_lua_thread(
     )
     .await?;
 
+    execute_lua_thread_impl(outputter, thread, channels, cancel_rx).await
+}
+
+/// Executes a Lua async thread in response to a message reply
+pub async fn execute_lua_reply_thread(
+    http: Arc<Http>,
+    reply_to: &Message,
+    user_id: UserId,
+    discord_config: &config::Discord,
+    thread: mlua::AsyncThread<Option<String>>,
+    channels: LuaOutputChannels,
+    cancel_rx: Option<flume::Receiver<MessageId>>,
+) -> anyhow::Result<MessageId> {
+    let outputter = OutputterHandle::new_reply(
+        http,
+        reply_to,
+        user_id,
+        discord_config.message_update_interval_ms,
+        "Processing reply...",
+    )
+    .await?;
+
+    execute_lua_thread_impl(outputter, thread, channels, cancel_rx).await
+}
+
+/// Common implementation for executing Lua threads with output handling
+async fn execute_lua_thread_impl(
+    outputter: OutputterHandle,
+    mut thread: mlua::AsyncThread<Option<String>>,
+    channels: LuaOutputChannels,
+    mut cancel_rx: Option<flume::Receiver<MessageId>>,
+) -> anyhow::Result<MessageId> {
     struct Output {
         output: String,
         print_log: Vec<String>,
@@ -129,7 +162,7 @@ pub async fn execute_lua_thread(
 
     outputter.join().await?;
 
-    Ok(())
+    Ok(starting_message_id)
 }
 
 /// Helper to get next item from an optional receiver by creating a temporary stream.
