@@ -1,6 +1,7 @@
 use std::{collections::HashMap, num::NonZeroUsize, sync::Mutex};
 
 use lru::LruCache;
+use serde::Serialize;
 use serenity::all::{ChannelId, GuildId, MessageId, UserId};
 
 /// Context stored for an interaction response, allowing us to handle replies
@@ -22,7 +23,8 @@ pub struct InteractionContext {
 }
 
 /// A command option value
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
+#[serde(untagged)]
 pub enum OptionValue {
     String(String),
     Integer(i64),

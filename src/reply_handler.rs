@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use serde::Serialize;
 use serenity::all::{ChannelId, GuildId, Http, Message, MessageId, UserId};
 
 use crate::interaction_context::OptionValue;
@@ -50,6 +51,53 @@ pub struct ReplyChain {
     /// The message chain, from oldest to newest
     /// First message is typically the bot's response to the original command
     pub messages: Vec<ChainMessage>,
+}
+
+/// Lua-serializable version of ChainMessage (IDs as strings)
+#[derive(Serialize)]
+pub struct LuaChainMessage {
+    pub id: String,
+    pub content: String,
+    pub author_id: String,
+    pub author_name: String,
+    pub is_bot: bool,
+    pub channel_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guild_id: Option<String>,
+    pub attachments: Vec<String>,
+}
+
+impl From<&ChainMessage> for LuaChainMessage {
+    fn from(msg: &ChainMessage) -> Self {
+        Self {
+            id: msg.id.get().to_string(),
+            content: msg.content.clone(),
+            author_id: msg.author_id.get().to_string(),
+            author_name: msg.author_name.clone(),
+            is_bot: msg.is_bot,
+            channel_id: msg.channel_id.get().to_string(),
+            guild_id: msg.guild_id.map(|id| id.get().to_string()),
+            attachments: msg.attachments.clone(),
+        }
+    }
+}
+
+/// Lua-serializable version of ReplyChain
+#[derive(Serialize)]
+pub struct LuaReplyChain {
+    pub command_name: String,
+    pub options: HashMap<String, OptionValue>,
+    pub messages: Vec<LuaChainMessage>,
+}
+
+impl From<&ReplyChain> for LuaReplyChain {
+    fn from(chain: &ReplyChain) -> Self {
+        Self {
+            command_name: chain.command_name.clone(),
+            options: chain.options.clone(),
+            messages: chain.messages.iter().map(LuaChainMessage::from).collect(),
+        }
+    }
 }
 
 /// Build a message chain by walking up the reference chain

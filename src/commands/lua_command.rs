@@ -3,6 +3,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use mlua::LuaSerdeExt as _;
+use serde::Serialize;
 use serenity::all::{
     CommandDataOptionValue, CommandInteraction, CommandOptionType, CreateCommand,
     CreateCommandOption, Http,
@@ -16,6 +18,12 @@ use crate::{
         extensions::{Attachment, TemporaryChannelUpdate},
     },
 };
+
+/// Lua-serializable interaction data
+#[derive(Serialize)]
+struct LuaInteraction {
+    options: HashMap<String, OptionValue>,
+}
 
 pub struct Handler {
     name: String,
@@ -67,11 +75,7 @@ impl super::CommandHandler for Handler {
         // Lock the global Lua state for this execution (held for entire duration)
         let lua = &self.global_lua;
 
-        // Build interaction table and collect options for context storage
-        let interaction = lua.create_table()?;
-        let options = lua.create_table()?;
-
-        // Parse options from Discord interaction into context storage first
+        // Parse options from Discord interaction into context storage
         let mut context_options = HashMap::new();
         for opt in &cmd.data.options {
             let value = match &opt.value {
@@ -86,17 +90,10 @@ impl super::CommandHandler for Handler {
             }
         }
 
-        // Build Lua options table from context options
-        for (name, value) in &context_options {
-            match value {
-                OptionValue::String(s) => options.set(name.as_str(), s.clone())?,
-                OptionValue::Integer(i) => options.set(name.as_str(), *i)?,
-                OptionValue::Number(n) => options.set(name.as_str(), *n)?,
-                OptionValue::Boolean(b) => options.set(name.as_str(), *b)?,
-            }
-        }
-
-        interaction.set("options", options)?;
+        // Build interaction table using serde
+        let interaction = lua.to_value(&LuaInteraction {
+            options: context_options.clone(),
+        })?;
 
         let handler = self
             .command_registry

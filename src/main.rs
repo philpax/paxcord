@@ -1,6 +1,7 @@
 use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
 use anyhow::Context as AnyhowContext;
+use mlua::LuaSerdeExt as _;
 use serenity::{
     Client,
     all::{
@@ -258,10 +259,9 @@ impl Handler {
         referenced_msg_id: MessageId,
     ) -> anyhow::Result<()> {
         use crate::{
-            interaction_context::OptionValue,
             lua::extensions::{Attachment, TemporaryChannelUpdate},
             lua::{LuaOutputChannels, execute_lua_reply_thread},
-            reply_handler::{ReplyChain, build_message_chain},
+            reply_handler::{LuaReplyChain, ReplyChain, build_message_chain},
         };
 
         // First, check if the referenced message is in our interaction context store
@@ -326,50 +326,9 @@ impl Handler {
         let (print_tx, print_rx) = flume::unbounded::<String>();
         let (attachment_tx, attachment_rx) = flume::unbounded::<Attachment>();
 
-        // Build the Lua table for the reply chain
+        // Build the Lua table for the reply chain using serde
         let lua = &self.global_lua;
-
-        let chain_table = lua.create_table()?;
-
-        // Set command_name
-        chain_table.set("command_name", reply_chain.command_name.clone())?;
-
-        // Set options
-        let options_table = lua.create_table()?;
-        for (key, value) in &reply_chain.options {
-            match value {
-                OptionValue::String(s) => options_table.set(key.as_str(), s.clone())?,
-                OptionValue::Integer(i) => options_table.set(key.as_str(), *i)?,
-                OptionValue::Number(n) => options_table.set(key.as_str(), *n)?,
-                OptionValue::Boolean(b) => options_table.set(key.as_str(), *b)?,
-            }
-        }
-        chain_table.set("options", options_table)?;
-
-        // Set messages array
-        let messages_table = lua.create_table()?;
-        for (i, msg) in reply_chain.messages.iter().enumerate() {
-            let msg_table = lua.create_table()?;
-            msg_table.set("id", msg.id.get().to_string())?;
-            msg_table.set("content", msg.content.clone())?;
-            msg_table.set("author_id", msg.author_id.get().to_string())?;
-            msg_table.set("author_name", msg.author_name.clone())?;
-            msg_table.set("is_bot", msg.is_bot)?;
-            msg_table.set("channel_id", msg.channel_id.get().to_string())?;
-            if let Some(guild_id) = msg.guild_id {
-                msg_table.set("guild_id", guild_id.get().to_string())?;
-            }
-
-            // Set attachments
-            let attachments_table = lua.create_table()?;
-            for (j, url) in msg.attachments.iter().enumerate() {
-                attachments_table.set(j + 1, url.clone())?;
-            }
-            msg_table.set("attachments", attachments_table)?;
-
-            messages_table.set(i + 1, msg_table)?;
-        }
-        chain_table.set("messages", messages_table)?;
+        let chain_table = lua.to_value(&LuaReplyChain::from(&reply_chain))?;
 
         // Create the thread and register channels
         let thread = lua.create_thread(handler)?;
