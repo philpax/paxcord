@@ -70,31 +70,29 @@ impl super::CommandHandler for Handler {
         // Build interaction table and collect options for context storage
         let interaction = lua.create_table()?;
         let options = lua.create_table()?;
-        let mut context_options = HashMap::new();
 
-        // Parse options from Discord interaction
+        // Parse options from Discord interaction into context storage first
+        let mut context_options = HashMap::new();
         for opt in &cmd.data.options {
-            let value = &opt.value;
+            let value = match &opt.value {
+                CommandDataOptionValue::String(s) => Some(OptionValue::String(s.clone())),
+                CommandDataOptionValue::Integer(i) => Some(OptionValue::Integer(*i)),
+                CommandDataOptionValue::Number(n) => Some(OptionValue::Number(*n)),
+                CommandDataOptionValue::Boolean(b) => Some(OptionValue::Boolean(*b)),
+                _ => None, // Skip complex types like User, Channel, Role, Attachment
+            };
+            if let Some(v) = value {
+                context_options.insert(opt.name.clone(), v);
+            }
+        }
+
+        // Build Lua options table from context options
+        for (name, value) in &context_options {
             match value {
-                CommandDataOptionValue::String(s) => {
-                    options.set(opt.name.as_str(), s.clone())?;
-                    context_options.insert(opt.name.clone(), OptionValue::String(s.clone()));
-                }
-                CommandDataOptionValue::Integer(i) => {
-                    options.set(opt.name.as_str(), *i)?;
-                    context_options.insert(opt.name.clone(), OptionValue::Integer(*i));
-                }
-                CommandDataOptionValue::Number(n) => {
-                    options.set(opt.name.as_str(), *n)?;
-                    context_options.insert(opt.name.clone(), OptionValue::Number(*n));
-                }
-                CommandDataOptionValue::Boolean(b) => {
-                    options.set(opt.name.as_str(), *b)?;
-                    context_options.insert(opt.name.clone(), OptionValue::Boolean(*b));
-                }
-                _ => {
-                    // For now, skip complex types like User, Channel, Role, Attachment
-                }
+                OptionValue::String(s) => options.set(name.as_str(), s.clone())?,
+                OptionValue::Integer(i) => options.set(name.as_str(), *i)?,
+                OptionValue::Number(n) => options.set(name.as_str(), *n)?,
+                OptionValue::Boolean(b) => options.set(name.as_str(), *b)?,
             }
         }
 
