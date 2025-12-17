@@ -645,6 +645,11 @@ discord.register_reply_handler("ask", function(chain)
 		llm.system(system),
 	}
 
+	-- Add the original prompt (slash command options aren't in chain.messages)
+	if chain.options.prompt then
+		table.insert(messages, llm.user(chain.options.prompt))
+	end
+
 	-- Add all messages from the chain
 	for _, msg in ipairs(chain.messages) do
 		if msg.is_bot then
