@@ -1,7 +1,98 @@
 -- scripts/commands.lua
 -- Discord command definitions using the discord.register_command API
 
+-- ============================================================================
+-- /ask command helpers - footer generation and parsing kept together
+-- ============================================================================
+local ask = {}
+ask.default_system = "You are a helpful assistant."
+
+-- Generate footer for /ask responses
+-- Format: "-# Model: {model} | Seed: {seed} | System: {system}"
+function ask.make_footer(params)
+	return string.format(
+		"\n\n-# Model: %s | Seed: %d | System: %s",
+		params.model,
+		params.seed,
+		params.system
+	)
+end
+
+-- Parse footer from /ask response content
+-- Returns table with model, seed, system or nil if parsing fails
+function ask.parse_footer(content)
+	-- Look for the footer pattern at the end
+	local footer = content:match("\n\n%-# ([^\n]+)$")
+	if not footer then
+		return nil
+	end
+
+	local model = footer:match("Model: ([^|]+)")
+	local seed = footer:match("Seed: (%d+)")
+	local system = footer:match("System: (.+)$")
+
+	if model and seed then
+		return {
+			model = string.trim(model),
+			seed = tonumber(seed),
+			system = system and string.trim(system) or ask.default_system,
+		}
+	end
+	return nil
+end
+
+-- Strip footer from content (for building message history)
+function ask.strip_footer(content)
+	local footer_pos = content:find("\n\n%-#[^\n]*$")
+	if footer_pos then
+		return content:sub(1, footer_pos - 1)
+	end
+	return content
+end
+
+-- ============================================================================
+-- /paint command helpers - footer generation and parsing kept together
+-- ============================================================================
+local paint = {}
+paint.default_negative = "text, watermark, blurry"
+
+-- Generate footer for /paint responses
+-- Format: "Prompt: {prompt} | Model: {model_name} | Size: {width}x{height} | Seed: {seed}"
+function paint.make_footer(params)
+	return string.format(
+		"Prompt: %s | Model: %s | Size: %dx%d | Seed: %d",
+		params.prompt,
+		params.model_name,
+		params.width,
+		params.height,
+		params.seed
+	)
+end
+
+-- Parse footer from /paint response content
+-- Returns table with prompt, model_name, width, height, seed or nil if parsing fails
+function paint.parse_footer(content)
+	local prompt = content:match("Prompt: ([^|]+)")
+	local model_name = content:match("Model: ([^|]+)")
+	local size = content:match("Size: (%d+x%d+)")
+	local seed = content:match("Seed: (%d+)")
+
+	if prompt and model_name and size and seed then
+		local width, height = size:match("(%d+)x(%d+)")
+		return {
+			prompt = string.trim(prompt),
+			model_name = string.trim(model_name),
+			width = tonumber(width),
+			height = tonumber(height),
+			seed = tonumber(seed),
+		}
+	end
+	return nil
+end
+
+-- ============================================================================
 -- Currency data and choices for the convert command
+-- ============================================================================
 local currency_data = {
 	{ "USD", "US Dollar" },
 	{ "EUR", "Euro" },
@@ -61,6 +152,12 @@ discord.register_command {
 			required = true,
 		},
 		{
+			name = "system",
+			description = "System prompt (default: '" .. ask.default_system .. "')",
+			type = "string",
+			required = false,
+		},
+		{
 			name = "seed",
 			description = "Random seed for deterministic output",
 			type = "integer",
@@ -72,18 +169,19 @@ discord.register_command {
 	execute = function(interaction)
 		local model = interaction.options.model
 		local prompt = interaction.options.prompt
+		local system = interaction.options.system or ask.default_system
 		local seed = interaction.options.seed or math.random(1, 2147483647)
 
 		output("Generating...")
 
 		local messages = {
-			llm.system("You are a helpful assistant."),
+			llm.system(system),
 			llm.user(prompt),
 		}
 
 		local response = string.trim(stream_llm_response(messages, model, seed))
 
-		output(response .. "\n\n-# Model: " .. model .. " | Seed: " .. seed)
+		output(response .. ask.make_footer({ model = model, seed = seed, system = system }))
 	end,
 }
 
@@ -300,16 +398,13 @@ local function generate_image(prompt, negative, seed, model_info, width, height)
 		for i, image_data in ipairs(images) do
 			attach("image_" .. seed .. "_" .. i .. ".png", image_data)
 		end
-		output(
-			string.format(
-				"Prompt: %s | Model: %s | Size: %dx%d | Seed: %d",
-				prompt,
-				model_info.name,
-				width,
-				height,
-				seed
-			)
-		)
+		output(paint.make_footer({
+			prompt = prompt,
+			model_name = model_info.name,
+			width = width,
+			height = height,
+			seed = seed,
+		}))
 	else
 		output("No images were generated.")
 	end
@@ -520,10 +615,27 @@ discord.register_command {
 
 -- Reply handler for /ask - continues the conversation
 discord.register_reply_handler("ask", function(chain)
+	-- Try to get parameters from options first
 	local model = chain.options.model
 	local original_seed = chain.options.seed
+	local system = chain.options.system
 
-	-- Require original parameters
+	-- If options not available, try to parse from first bot message footer
+	if not model or not original_seed then
+		for _, msg in ipairs(chain.messages) do
+			if msg.is_bot then
+				local parsed = ask.parse_footer(msg.content)
+				if parsed then
+					model = model or parsed.model
+					original_seed = original_seed or parsed.seed
+					system = system or parsed.system
+					break
+				end
+			end
+		end
+	end
+
+	-- Require parameters
 	if not model then
 		error("Original model parameter not available - cannot continue conversation")
 	end
@@ -531,24 +643,21 @@ discord.register_reply_handler("ask", function(chain)
 		error("Original seed parameter not available - cannot continue conversation")
 	end
 
+	-- Default system prompt if still not found
+	system = system or ask.default_system
+
 	output("Continuing conversation...")
 
 	-- Build the message history from the chain
 	local messages = {
-		llm.system("You are a helpful assistant."),
+		llm.system(system),
 	}
 
 	-- Add all messages from the chain
 	for _, msg in ipairs(chain.messages) do
 		if msg.is_bot then
-			-- Bot messages are assistant responses
-			-- Strip the metadata footer (everything after the last "\n\n-#")
-			local content = msg.content
-			local footer_pos = content:find("\n\n%-#[^\n]*$")
-			if footer_pos then
-				content = content:sub(1, footer_pos - 1)
-			end
-			table.insert(messages, llm.assistant(content))
+			-- Bot messages are assistant responses - strip footer
+			table.insert(messages, llm.assistant(ask.strip_footer(msg.content)))
 		else
 			-- User messages
 			table.insert(messages, llm.user(msg.content))
@@ -558,20 +667,47 @@ discord.register_reply_handler("ask", function(chain)
 	-- Stream the response
 	local response = string.trim(stream_llm_response(messages, model, original_seed))
 
-	output(response .. "\n\n-# Model: " .. model .. " | Seed: " .. original_seed .. " | Continued conversation")
+	output(response .. ask.make_footer({ model = model, seed = original_seed, system = system }))
 end)
 
 -- Reply handler for /paint - regenerates image with new prompt
 discord.register_reply_handler("paint", function(chain)
-	-- Get the original options - require model
+	-- Try to get parameters from options first
 	local original_model = chain.options.model
+	local original_width = chain.options.width
+	local original_height = chain.options.height
+	local original_negative = chain.options.negative
+
+	-- If model not available, try to parse from first bot message footer
+	if not original_model then
+		for _, msg in ipairs(chain.messages) do
+			if msg.is_bot then
+				local parsed = paint.parse_footer(msg.content)
+				if parsed then
+					-- We need to find the model filename from the model name
+					-- Search through model_data to find matching name
+					for _, filename in ipairs(model_data) do
+						local info = parse_model_filename(filename)
+						if info.name == parsed.model_name then
+							original_model = filename
+							break
+						end
+					end
+					original_width = original_width or parsed.width
+					original_height = original_height or parsed.height
+					break
+				end
+			end
+		end
+	end
+
+	-- Require model
 	if not original_model then
 		error("Original model parameter not available - cannot regenerate image")
 	end
 
-	local original_width = chain.options.width
-	local original_height = chain.options.height
-	local original_negative = chain.options.negative or "text, watermark, blurry"
+	-- Default negative prompt
+	original_negative = original_negative or paint.default_negative
 
 	-- Get the new prompt from the latest user message
 	local new_prompt = nil
@@ -583,8 +719,7 @@ discord.register_reply_handler("paint", function(chain)
 	end
 
 	if not new_prompt or new_prompt == "" then
-		output("Please provide a prompt in your reply.")
-		return
+		error("Please provide a prompt in your reply.")
 	end
 
 	-- Generate a new seed for variation
