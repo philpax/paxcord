@@ -87,10 +87,3 @@ impl InteractionContextStore {
         self.cache.lock().unwrap().get(message_id).cloned()
     }
 }
-
-impl Default for InteractionContextStore {
-    fn default() -> Self {
-        // Default to 1000 entries - should be plenty for most use cases
-        Self::new(1000)
-    }
-}

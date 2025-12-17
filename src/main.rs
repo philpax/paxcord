@@ -48,7 +48,9 @@ async fn main() -> anyhow::Result<()> {
     // Create command registry, reply handler registry, and interaction context store
     let command_registry = LuaCommandRegistry::default();
     let reply_handler_registry = LuaReplyHandlerRegistry::default();
-    let interaction_context_store = Arc::new(InteractionContextStore::default());
+    let interaction_context_store = Arc::new(InteractionContextStore::new(
+        config.discord.interaction_context_cache_size,
+    ));
 
     // We intentionally do not use _output_rx/_attachment_rx, as we don't care about temporary output at the global level
     let (output_tx, _output_rx) = flume::unbounded::<String>();

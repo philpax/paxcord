@@ -54,6 +54,8 @@ pub struct Discord {
     pub message_update_interval_ms: u64,
     /// Whether or not to replace '\n' with newlines
     pub replace_newlines: bool,
+    /// Size of the LRU cache for interaction contexts (for reply handling)
+    pub interaction_context_cache_size: usize,
 }
 
 impl Default for Discord {
@@ -61,6 +63,7 @@ impl Default for Discord {
         Self {
             message_update_interval_ms: 1000,
             replace_newlines: true,
+            interaction_context_cache_size: 10000,
         }
     }
 }
