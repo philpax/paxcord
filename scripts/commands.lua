@@ -2,48 +2,71 @@
 -- Discord command definitions using the discord.register_command API
 
 -- ============================================================================
--- /ask command helpers - footer generation and parsing kept together
+-- Footer serialization - roundtrippable structured format
+-- Format: -# @key=type:value|key2=type:value2|...
+-- Types: s=string, i=integer, n=number, b=boolean
 -- ============================================================================
-local ask = {}
-ask.default_system = "You are a helpful assistant."
+local footer = {}
 
--- Generate footer for /ask responses
--- Format: "-# Model: {model} | Seed: {seed} | System: {system}"
-function ask.make_footer(params)
-	return string.format(
-		"\n\n-# Model: %s | Seed: %d | System: %s",
-		params.model,
-		params.seed,
-		params.system
-	)
+-- Serialize a params table to footer string
+function footer.serialize(params)
+	local parts = {}
+	local keys = {}
+	for k in pairs(params) do
+		table.insert(keys, k)
+	end
+	table.sort(keys)
+
+	for _, k in ipairs(keys) do
+		local v = params[k]
+		local encoded
+		if type(v) == "string" then
+			-- Escape special chars: \ | =
+			encoded = "s:" .. v:gsub("\\", "\\\\"):gsub("|", "\\p"):gsub("=", "\\e")
+		elseif type(v) == "number" then
+			if math.floor(v) == v then
+				encoded = "i:" .. tostring(math.floor(v))
+			else
+				encoded = "n:" .. tostring(v)
+			end
+		elseif type(v) == "boolean" then
+			encoded = "b:" .. (v and "1" or "0")
+		end
+		if encoded then
+			table.insert(parts, k .. "=" .. encoded)
+		end
+	end
+	return "\n\n-# @" .. table.concat(parts, "|")
 end
 
--- Parse footer from /ask response content
--- Returns table with model, seed, system or nil if parsing fails
-function ask.parse_footer(content)
-	-- Look for the footer pattern at the end
-	local footer = content:match("\n\n%-# ([^\n]+)$")
-	if not footer then
+-- Deserialize footer string back to params table
+function footer.deserialize(content)
+	local data = content:match("\n\n%-# @(.+)$")
+	if not data then
 		return nil
 	end
 
-	local model = footer:match("Model: ([^|]+)")
-	local seed = footer:match("Seed: (%d+)")
-	local system = footer:match("System: (.+)$")
-
-	if model and seed then
-		return {
-			model = string.trim(model),
-			seed = tonumber(seed),
-			system = system and string.trim(system) or ask.default_system,
-		}
+	local result = {}
+	for pair in data:gmatch("[^|]+") do
+		local key, type_val = pair:match("([^=]+)=(.+)")
+		if key and type_val then
+			local t, v = type_val:match("^(.):(.*)$")
+			if t == "s" then
+				-- Unescape: \\ -> \, \p -> |, \e -> =
+				result[key] = v:gsub("\\e", "="):gsub("\\p", "|"):gsub("\\\\", "\\")
+			elseif t == "i" or t == "n" then
+				result[key] = tonumber(v)
+			elseif t == "b" then
+				result[key] = v == "1"
+			end
+		end
 	end
-	return nil
+	return result
 end
 
 -- Strip footer from content (for building message history)
-function ask.strip_footer(content)
-	local footer_pos = content:find("\n\n%-#[^\n]*$")
+function footer.strip(content)
+	local footer_pos = content:find("\n\n%-# @[^\n]*$")
 	if footer_pos then
 		return content:sub(1, footer_pos - 1)
 	end
@@ -51,44 +74,13 @@ function ask.strip_footer(content)
 end
 
 -- ============================================================================
--- /paint command helpers - footer generation and parsing kept together
+-- Command-specific defaults
 -- ============================================================================
+local ask = {}
+ask.default_system = "You are a helpful assistant."
+
 local paint = {}
 paint.default_negative = "text, watermark, blurry"
-
--- Generate footer for /paint responses
--- Format: "Prompt: {prompt} | Model: {model_name} | Size: {width}x{height} | Seed: {seed}"
-function paint.make_footer(params)
-	return string.format(
-		"Prompt: %s | Model: %s | Size: %dx%d | Seed: %d",
-		params.prompt,
-		params.model_name,
-		params.width,
-		params.height,
-		params.seed
-	)
-end
-
--- Parse footer from /paint response content
--- Returns table with prompt, model_name, width, height, seed or nil if parsing fails
-function paint.parse_footer(content)
-	local prompt = content:match("Prompt: ([^|]+)")
-	local model_name = content:match("Model: ([^|]+)")
-	local size = content:match("Size: (%d+x%d+)")
-	local seed = content:match("Seed: (%d+)")
-
-	if prompt and model_name and size and seed then
-		local width, height = size:match("(%d+)x(%d+)")
-		return {
-			prompt = string.trim(prompt),
-			model_name = string.trim(model_name),
-			width = tonumber(width),
-			height = tonumber(height),
-			seed = tonumber(seed),
-		}
-	end
-	return nil
-end
 
 -- ============================================================================
 -- Currency data and choices for the convert command
@@ -181,7 +173,7 @@ discord.register_command {
 
 		local response = string.trim(stream_llm_response(messages, model, seed))
 
-		output(response .. ask.make_footer({ model = model, seed = seed, system = system }))
+		output(response .. footer.serialize({ model = model, seed = seed, system = system }))
 	end,
 }
 
@@ -398,9 +390,9 @@ local function generate_image(prompt, negative, seed, model_info, width, height)
 		for i, image_data in ipairs(images) do
 			attach("image_" .. seed .. "_" .. i .. ".png", image_data)
 		end
-		output(paint.make_footer({
+		output(footer.serialize({
 			prompt = prompt,
-			model_name = model_info.name,
+			model = model_info.filename,
 			width = width,
 			height = height,
 			seed = seed,
@@ -624,7 +616,7 @@ discord.register_reply_handler("ask", function(chain)
 	if not model or not original_seed then
 		for _, msg in ipairs(chain.messages) do
 			if msg.is_bot then
-				local parsed = ask.parse_footer(msg.content)
+				local parsed = footer.deserialize(msg.content)
 				if parsed then
 					model = model or parsed.model
 					original_seed = original_seed or parsed.seed
@@ -657,7 +649,7 @@ discord.register_reply_handler("ask", function(chain)
 	for _, msg in ipairs(chain.messages) do
 		if msg.is_bot then
 			-- Bot messages are assistant responses - strip footer
-			table.insert(messages, llm.assistant(ask.strip_footer(msg.content)))
+			table.insert(messages, llm.assistant(footer.strip(msg.content)))
 		else
 			-- User messages
 			table.insert(messages, llm.user(msg.content))
@@ -667,7 +659,7 @@ discord.register_reply_handler("ask", function(chain)
 	-- Stream the response
 	local response = string.trim(stream_llm_response(messages, model, original_seed))
 
-	output(response .. ask.make_footer({ model = model, seed = original_seed, system = system }))
+	output(response .. footer.serialize({ model = model, seed = original_seed, system = system }))
 end)
 
 -- Reply handler for /paint - regenerates image with new prompt
@@ -682,17 +674,9 @@ discord.register_reply_handler("paint", function(chain)
 	if not original_model then
 		for _, msg in ipairs(chain.messages) do
 			if msg.is_bot then
-				local parsed = paint.parse_footer(msg.content)
+				local parsed = footer.deserialize(msg.content)
 				if parsed then
-					-- We need to find the model filename from the model name
-					-- Search through model_data to find matching name
-					for _, filename in ipairs(model_data) do
-						local info = parse_model_filename(filename)
-						if info.name == parsed.model_name then
-							original_model = filename
-							break
-						end
-					end
+					original_model = parsed.model
 					original_width = original_width or parsed.width
 					original_height = original_height or parsed.height
 					break
