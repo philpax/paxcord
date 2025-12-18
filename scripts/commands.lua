@@ -667,6 +667,77 @@ discord.register_reply_handler("ask", function(chain)
 	output(response .. footer.serialize({ model = model, seed = original_seed, system = system }))
 end)
 
+-- Register the /translate command
+discord.register_command {
+	name = "translate",
+	description = "Translate text to a target language",
+	options = {
+		{
+			name = "text",
+			description = "The text to translate",
+			type = "string",
+			required = true,
+		},
+		{
+			name = "language",
+			description = "The target language",
+			type = "string",
+			required = true,
+			suggestions = map({
+				"English",
+				"Spanish",
+				"French",
+				"German",
+				"Italian",
+				"Portuguese",
+				"Dutch",
+				"Polish",
+				"Swedish",
+				"Danish",
+				"Norwegian",
+				"Russian",
+				"Turkish",
+				"Arabic",
+				"Japanese",
+				"Korean",
+				"Chinese (Simplified)",
+				"Thai",
+				"Indonesian",
+				"Hindi",
+			}, function(lang)
+				return { name = lang, value = lang }
+			end),
+		},
+		{
+			name = "seed",
+			description = "Random seed for deterministic output",
+			type = "integer",
+			required = false,
+			min_value = 0,
+			max_value = 2147483647,
+		},
+	},
+	execute = function(interaction)
+		local text = interaction.options.text
+		local language = interaction.options.language
+		local seed = interaction.options.seed or math.random(1, 2147483647)
+		local model = "gpu:qwen3-30b-a3b-instruct-2507"
+
+		output("Translating...")
+
+		local messages = {
+			llm.system(
+				"You are a translator. Translate the user's text to the specified language. Output only the translation, nothing else."
+			),
+			llm.user("Translate to " .. language .. ":\n\n" .. text),
+		}
+
+		local response = string.trim(stream_llm_response(messages, model, seed))
+
+		output(response .. footer.serialize({ model = model, seed = seed, language = language }))
+	end,
+}
+
 -- Reply handler for /paint - regenerates image with new prompt
 discord.register_reply_handler("paint", function(chain)
 	-- Try to get parameters from options first
