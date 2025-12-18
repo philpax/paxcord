@@ -163,7 +163,8 @@ pub struct LuaCommandOption {
     pub min_length: Option<u16>,
     pub max_length: Option<u16>,
     pub autocomplete: bool,
-    pub choices: Vec<(String, String)>, // (name, value) for string choices
+    pub choices: Vec<(String, String)>, // (name, value) for strict string choices
+    pub suggestions: Vec<(String, String)>, // (name, value) for autocomplete suggestions
 }
 impl LuaCommand {
     pub fn to_discord_command(&self) -> CreateCommand {

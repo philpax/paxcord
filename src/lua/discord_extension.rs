@@ -3,10 +3,21 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use mlua::prelude::*;
+use mlua::{LuaSerdeExt as _, prelude::*};
+use serde::Deserialize;
 use serenity::all::CommandOptionType;
 
 use crate::commands::lua_command::{LuaCommand, LuaCommandOption, LuaCommandRegistry};
+
+/// Maximum number of choices/suggestions allowed per option (Discord limit)
+const MAX_CHOICES: usize = 25;
+
+/// A choice entry with name and value
+#[derive(Deserialize)]
+struct Choice {
+    name: String,
+    value: String,
+}
 
 /// Registry for reply handlers (command name -> Lua handler function)
 pub type LuaReplyHandlerRegistry = Arc<Mutex<HashMap<String, LuaFunction>>>;
@@ -19,7 +30,7 @@ pub fn register(
     let discord = lua.create_table()?;
 
     let registry_clone = command_registry.clone();
-    let register_command = lua.create_function(move |_lua, spec: LuaTable| {
+    let register_command = lua.create_function(move |lua, spec: LuaTable| {
         let name: String = spec.get("name")?;
         let description: String = spec.get("description")?;
 
@@ -27,7 +38,7 @@ pub fn register(
         let options: Vec<LuaCommandOption> = spec
             .get::<LuaTable>("options")
             .ok()
-            .map(parse_options)
+            .map(|opts| parse_options(lua, opts))
             .transpose()?
             .unwrap_or_default();
 
@@ -64,7 +75,7 @@ pub fn register(
     Ok(())
 }
 
-fn parse_options(opts: LuaTable) -> LuaResult<Vec<LuaCommandOption>> {
+fn parse_options(lua: &Lua, opts: LuaTable) -> LuaResult<Vec<LuaCommandOption>> {
     let mut options = vec![];
     for pair in opts.sequence_values::<LuaTable>() {
         let opt = pair?;
@@ -94,22 +105,49 @@ fn parse_options(opts: LuaTable) -> LuaResult<Vec<LuaCommandOption>> {
         let max_length: Option<u16> = opt.get("max_length").ok();
         let autocomplete: bool = opt.get("autocomplete").unwrap_or(false);
 
-        // Parse choices if present
+        // Parse choices (strict) and suggestions (autocomplete) - mutually exclusive
         let choices: Vec<(String, String)> = opt
-            .get::<LuaTable>("choices")
+            .get::<LuaValue>("choices")
             .ok()
-            .map(|c| {
-                let mut choices = vec![];
-                for pair in c.sequence_values::<LuaTable>() {
-                    let choice = pair?;
-                    let choice_name: String = choice.get("name")?;
-                    let choice_value: String = choice.get("value")?;
-                    choices.push((choice_name, choice_value));
-                }
-                Ok::<_, mlua::Error>(choices)
-            })
+            .filter(|v| !v.is_nil())
+            .map(|v| lua.from_value::<Vec<Choice>>(v))
             .transpose()?
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .into_iter()
+            .map(|c| (c.name, c.value))
+            .collect();
+
+        if choices.len() > MAX_CHOICES {
+            return Err(LuaError::runtime(format!(
+                "Option '{}' has {} choices, but Discord allows a maximum of {}",
+                name,
+                choices.len(),
+                MAX_CHOICES
+            )));
+        }
+
+        let suggestions: Vec<(String, String)> = opt
+            .get::<LuaValue>("suggestions")
+            .ok()
+            .filter(|v| !v.is_nil())
+            .map(|v| lua.from_value::<Vec<Choice>>(v))
+            .transpose()?
+            .unwrap_or_default()
+            .into_iter()
+            .map(|c| (c.name, c.value))
+            .collect();
+
+        if suggestions.len() > MAX_CHOICES {
+            return Err(LuaError::runtime(format!(
+                "Option '{}' has {} suggestions, but Discord allows a maximum of {}",
+                name,
+                suggestions.len(),
+                MAX_CHOICES
+            )));
+        }
+
+        // Enable autocomplete if suggestions are provided
+        let autocomplete = autocomplete || !suggestions.is_empty();
 
         options.push(LuaCommandOption {
             name,
@@ -122,6 +160,7 @@ fn parse_options(opts: LuaTable) -> LuaResult<Vec<LuaCommandOption>> {
             max_length,
             autocomplete,
             choices,
+            suggestions,
         });
     }
     Ok(options)

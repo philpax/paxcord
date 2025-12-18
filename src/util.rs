@@ -88,6 +88,7 @@ pub fn interaction_to_respondable_interaction(
         Interaction::Command(cmd) => Some(cmd),
         Interaction::Component(cmp) => Some(cmp),
         Interaction::Modal(modal) => Some(modal),
+        Interaction::Autocomplete(auto) => Some(auto),
         _ => None,
     }
 }

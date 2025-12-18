@@ -5,8 +5,9 @@ use mlua::LuaSerdeExt as _;
 use serenity::{
     Client,
     all::{
-        Command, Context, CreateInteractionResponse, CreateInteractionResponseMessage,
-        EventHandler, Http, Interaction, Message, MessageId, Ready,
+        AutocompleteChoice, Command, Context, CreateAutocompleteResponse,
+        CreateInteractionResponse, CreateInteractionResponseMessage, EventHandler, Http,
+        Interaction, Message, MessageId, Ready,
     },
     async_trait,
     model::prelude::GatewayIntents,
@@ -99,6 +100,7 @@ async fn main() -> anyhow::Result<()> {
         interaction_context_store: interaction_context_store.clone(),
         reply_handler_registry: reply_handler_registry.clone(),
         global_lua: global_lua.clone(),
+        command_registry: command_registry.clone(),
     })
     .await
     .context("Error creating client")?;
@@ -164,6 +166,7 @@ pub struct Handler {
     interaction_context_store: Arc<InteractionContextStore>,
     reply_handler_registry: LuaReplyHandlerRegistry,
     global_lua: mlua::Lua,
+    command_registry: LuaCommandRegistry,
 }
 #[async_trait]
 impl EventHandler for Handler {
@@ -241,6 +244,42 @@ impl Handler {
                         &*http,
                         CreateInteractionResponse::UpdateMessage(
                             CreateInteractionResponseMessage::new(),
+                        ),
+                    )
+                    .await
+                    .ok();
+                }
+            }
+            Interaction::Autocomplete(auto) => {
+                let command_name = &auto.data.name;
+
+                if let Some(focused) = auto.data.autocomplete() {
+                    let option_name = focused.name;
+                    let partial_value = focused.value;
+
+                    // Look up the command and option to get suggestions
+                    let suggestions = self
+                        .command_registry
+                        .lock()
+                        .unwrap()
+                        .get(command_name)
+                        .and_then(|cmd| cmd.options.iter().find(|o| o.name == option_name))
+                        .map(|opt| &opt.suggestions)
+                        .cloned()
+                        .unwrap_or_default();
+
+                    // Filter suggestions by partial input (case-insensitive)
+                    let partial_lower = partial_value.to_lowercase();
+                    let choices: Vec<AutocompleteChoice> = suggestions
+                        .iter()
+                        .filter(|(name, _)| name.to_lowercase().contains(&partial_lower))
+                        .map(|(name, value)| AutocompleteChoice::new(name.clone(), value.clone()))
+                        .collect();
+
+                    auto.create_response(
+                        &*http,
+                        CreateInteractionResponse::Autocomplete(
+                            CreateAutocompleteResponse::new().set_choices(choices),
                         ),
                     )
                     .await
