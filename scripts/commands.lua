@@ -824,6 +824,52 @@ discord.register_command {
 	end,
 }
 
+-- Register the /ocr command
+discord.register_command {
+	name = "ocr",
+	description = "Extract text from an image using AI vision",
+	options = {
+		{
+			name = "image",
+			description = "Image to extract text from (upload)",
+			type = "attachment",
+			required = false,
+		},
+		{
+			name = "image_url",
+			description = "Image URL to extract text from",
+			type = "string",
+			required = false,
+		},
+	},
+	execute = function(interaction)
+		local image_url = interaction.options.image or interaction.options.image_url
+		if not image_url then
+			error("Please provide an image (upload or URL)")
+		end
+
+		local model = "gpu:qwen3-vl-30b-a3b-instruct"
+		local seed = math.random(1, 2147483647)
+
+		output("Downloading image...")
+		local image_data = fetch(image_url)
+
+		output("Extracting text...")
+		local messages = {
+			llm.user {
+				{
+					type = "text",
+					text = "Perform OCR on this image. Transcribe all text visible in this image. Output only the transcribed text with no additional commentary.",
+				},
+				{ type = "image", data = image_data },
+			},
+		}
+
+		local response = string.trim(stream_llm_response(messages, model, seed))
+		output(response)
+	end,
+}
+
 -- Register the /describeimage command
 discord.register_command {
 	name = "describeimage",
