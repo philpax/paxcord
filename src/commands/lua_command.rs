@@ -83,7 +83,15 @@ impl super::CommandHandler for Handler {
                 CommandDataOptionValue::Integer(i) => Some(OptionValue::Integer(*i)),
                 CommandDataOptionValue::Number(n) => Some(OptionValue::Number(*n)),
                 CommandDataOptionValue::Boolean(b) => Some(OptionValue::Boolean(*b)),
-                _ => None, // Skip complex types like User, Channel, Role, Attachment
+                CommandDataOptionValue::Attachment(a) => {
+                    // Resolve attachment to get URL
+                    cmd.data
+                        .resolved
+                        .attachments
+                        .get(a)
+                        .map(|att| OptionValue::Attachment(att.url.clone()))
+                }
+                _ => None, // Skip complex types like User, Channel, Role
             };
             if let Some(v) = value {
                 context_options.insert(opt.name.clone(), v);

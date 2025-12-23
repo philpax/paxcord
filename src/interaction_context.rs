@@ -30,6 +30,7 @@ pub enum OptionValue {
     Integer(i64),
     Number(f64),
     Boolean(bool),
+    Attachment(String), // URL of the attachment
 }
 
 #[allow(dead_code)]
