@@ -31,3 +31,4 @@ serenity = { version = "0.12.4" }
 tokio = { version = "1.0", features = ["full"] }
 toml = "0.7.3"
 lru = "0.12"
+data-encoding = "2.9.0"

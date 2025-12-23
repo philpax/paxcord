@@ -824,6 +824,56 @@ discord.register_command {
 	end,
 }
 
+-- Register the /describeimage command
+discord.register_command {
+	name = "describeimage",
+	description = "Describe an image using AI vision",
+	options = {
+		{
+			name = "image",
+			description = "Image to describe (upload)",
+			type = "attachment",
+			required = false,
+		},
+		{
+			name = "image_url",
+			description = "Image URL to describe",
+			type = "string",
+			required = false,
+		},
+		{
+			name = "prompt",
+			description = "Custom prompt (default: 'Describe this image in detail.')",
+			type = "string",
+			required = false,
+		},
+	},
+	execute = function(interaction)
+		local image_url = interaction.options.image or interaction.options.image_url
+		if not image_url then
+			error("Please provide an image (upload or URL)")
+		end
+
+		local prompt = interaction.options.prompt or "Describe this image in detail."
+		local model = "gpu:qwen3-vl-30b-a3b-instruct"
+		local seed = math.random(1, 2147483647)
+
+		output("Downloading image...")
+		local image_data = fetch(image_url)
+
+		output("Analyzing image...")
+		local messages = {
+			llm.user {
+				{ type = "text", text = prompt },
+				{ type = "image", data = image_data },
+			},
+		}
+
+		local response = string.trim(stream_llm_response(messages, model, seed))
+		output(response)
+	end,
+}
+
 -- Reply handler for /paint - regenerates image with new prompt
 discord.register_reply_handler("paint", function(chain)
 	-- Try to get parameters from options first

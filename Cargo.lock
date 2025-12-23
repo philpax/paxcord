@@ -1430,6 +1430,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-openai",
+ "data-encoding",
  "flume",
  "lru",
  "mlua",

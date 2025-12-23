@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use async_openai::types::{
     ChatCompletionRequestAssistantMessage, ChatCompletionRequestMessage,
+    ChatCompletionRequestMessageContentPartImage, ChatCompletionRequestMessageContentPartText,
     ChatCompletionRequestSystemMessage, ChatCompletionRequestUserMessage,
-    CreateChatCompletionRequestArgs,
+    ChatCompletionRequestUserMessageContent, ChatCompletionRequestUserMessageContentPart,
+    CreateChatCompletionRequestArgs, ImageDetail, ImageUrl,
 };
 use serenity::futures::StreamExt as _;
 
@@ -181,9 +183,15 @@ fn register_message(lua: &mlua::Lua, table: &mlua::Table, role: &str) -> mlua::R
             let output = lua.create_table()?;
 
             if let Some(table) = value.as_table() {
-                output.set("content", table.get::<String>("content")?)?;
-                if let Ok(name) = table.get::<String>("name") {
-                    output.set("name", name)?;
+                // Check if this is a sequence (array of parts) or a table with content key
+                if table.contains_key(1)? && !table.contains_key("content")? {
+                    // This is an array of parts - store as "parts" for multimodal messages
+                    output.set("parts", table.clone())?;
+                } else {
+                    output.set("content", table.get::<String>("content")?)?;
+                    if let Ok(name) = table.get::<String>("name") {
+                        output.set("name", name)?;
+                    }
                 }
             } else if let Some(text) = value.as_string() {
                 output.set("content", text)?;
@@ -199,7 +207,6 @@ fn register_message(lua: &mlua::Lua, table: &mlua::Table, role: &str) -> mlua::R
 
 fn from_message_table_to_message(table: mlua::Table) -> mlua::Result<ChatCompletionRequestMessage> {
     let role = table.get::<String>("role")?;
-    let content = table.get::<String>("content")?;
     let name = if table.contains_key("name")? {
         Some(table.get::<String>("name")?)
     } else {
@@ -207,25 +214,76 @@ fn from_message_table_to_message(table: mlua::Table) -> mlua::Result<ChatComplet
     };
 
     match role.as_str() {
-        "system" => Ok(ChatCompletionRequestMessage::System(
-            ChatCompletionRequestSystemMessage {
-                content: content.into(),
-                name,
-            },
-        )),
-        "user" => Ok(ChatCompletionRequestMessage::User(
-            ChatCompletionRequestUserMessage {
-                content: content.into(),
-                name,
-            },
-        )),
-        "assistant" => Ok(ChatCompletionRequestMessage::Assistant(
-            ChatCompletionRequestAssistantMessage {
-                content: Some(content.into()),
-                name,
-                ..Default::default()
-            },
-        )),
+        "system" => {
+            let content = table.get::<String>("content")?;
+            Ok(ChatCompletionRequestMessage::System(
+                ChatCompletionRequestSystemMessage {
+                    content: content.into(),
+                    name,
+                },
+            ))
+        }
+        "user" => {
+            let content = if table.contains_key("parts")? {
+                // Multimodal message with parts
+                let parts_table = table.get::<mlua::Table>("parts")?;
+                let mut content_parts = Vec::new();
+
+                for part in parts_table.sequence_values::<mlua::Table>() {
+                    let part = part?;
+                    let part_type = part.get::<String>("type")?;
+
+                    match part_type.as_str() {
+                        "text" => {
+                            let text = part.get::<String>("text")?;
+                            content_parts.push(ChatCompletionRequestUserMessageContentPart::Text(
+                                ChatCompletionRequestMessageContentPartText { text },
+                            ));
+                        }
+                        "image" => {
+                            let data = part.get::<mlua::String>("data")?;
+                            let encoded = data_encoding::BASE64.encode(&data.as_bytes());
+                            let data_url = format!("data:image/png;base64,{encoded}");
+                            content_parts.push(
+                                ChatCompletionRequestUserMessageContentPart::ImageUrl(
+                                    ChatCompletionRequestMessageContentPartImage {
+                                        image_url: ImageUrl {
+                                            url: data_url,
+                                            detail: Some(ImageDetail::Auto),
+                                        },
+                                    },
+                                ),
+                            );
+                        }
+                        _ => {
+                            return Err(mlua::Error::FromLuaConversionError {
+                                from: "table",
+                                to: "ChatCompletionRequestUserMessageContentPart".to_string(),
+                                message: Some(format!("unknown part type `{part_type}`")),
+                            });
+                        }
+                    }
+                }
+
+                ChatCompletionRequestUserMessageContent::Array(content_parts)
+            } else {
+                table.get::<String>("content")?.into()
+            };
+
+            Ok(ChatCompletionRequestMessage::User(
+                ChatCompletionRequestUserMessage { content, name },
+            ))
+        }
+        "assistant" => {
+            let content = table.get::<String>("content")?;
+            Ok(ChatCompletionRequestMessage::Assistant(
+                ChatCompletionRequestAssistantMessage {
+                    content: Some(content.into()),
+                    name,
+                    ..Default::default()
+                },
+            ))
+        }
         _ => Err(mlua::Error::FromLuaConversionError {
             from: "table",
             to: "ChatCompletionRequestMessage".to_string(),

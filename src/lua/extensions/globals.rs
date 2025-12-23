@@ -96,10 +96,7 @@ pub fn register(
                 )));
             }
 
-            let bytes = response
-                .bytes()
-                .await
-                .map_err(mlua::Error::external)?;
+            let bytes = response.bytes().await.map_err(mlua::Error::external)?;
 
             // Check actual size after download (in case Content-Length wasn't present)
             if bytes.len() as u64 > MAX_SIZE {
