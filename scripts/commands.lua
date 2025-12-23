@@ -287,6 +287,10 @@ local model_data = {
 	"Stable v2.1 ^SD2.ckpt",
 	"SDXL 1.0 ^SDXL.safetensors",
 	"SDXL Turbo 1.0 ^SDXL.safetensors",
+	"Nova Orange XL v13.0 ^SDXL.safetensors",
+	"Nova Anime XL IL v14.0 ^SDXL.safetensors",
+	"Illustrious v2.0 ^SDXL.safetensors",
+	"Z Image Turbo ^ZImage.safetensors",
 }
 
 -- Default dimensions per architecture
@@ -294,6 +298,7 @@ local arch_defaults = {
 	SD1 = { width = 512, height = 512 },
 	SD2 = { width = 768, height = 768 },
 	SDXL = { width = 1024, height = 1024 },
+	ZImage = { width = 1024, height = 1024 },
 }
 
 -- Parse a model filename into its components
@@ -359,20 +364,53 @@ local function generate_image(prompt, negative, seed, model_info, width, height)
 	-- Create the graph
 	local g = comfy.graph(object_info)
 
-	-- Build the workflow with selected model
-	local c = g:CheckpointLoaderSimple(model_info.filename)
+	-- Load model, clip, and vae based on architecture
+	local model, clip, vae
+	if model_info.arch == "ZImage" then
+		model = g:UNETLoader {
+			unet_name = "z_image_turbo_bf16.safetensors",
+			weight_dtype = "default",
+		}
+		clip = g:CLIPLoader {
+			clip_name = "qwen_3_4b.safetensors",
+			device = "default",
+			type = "lumina2",
+		}
+		vae = g:VAELoader("flux1_ae.safetensors")
+	else
+		local c = g:CheckpointLoaderSimple(model_info.filename)
+		model, clip, vae = c.model, c.clip, c.vae
+	end
+
+	-- Create empty latent based on architecture
+	local latent_image
+	if model_info.arch == "ZImage" then
+		latent_image = g:EmptySD3LatentImage { width = width, height = height, batch_size = 1 }
+	else
+		latent_image = g:EmptyLatentImage { width = width, height = height, batch_size = 1 }
+	end
+
+	-- KSampler settings based on architecture
+	local steps, cfg, scheduler
+	if model_info.arch == "ZImage" then
+		steps, cfg, scheduler = 9, 1.0, "simple"
+	else
+		steps, cfg, scheduler = 20, 8.0, "normal"
+	end
+
+	-- Build the workflow
 	local preview = g:PreviewImage(g:VAEDecode {
-		vae = c.vae,
+		vae = vae,
 		samples = g:KSampler {
-			model = c.model,
+			model = model,
 			seed = seed,
-			steps = 20,
-			cfg = 8.0,
+			steps = steps,
+			cfg = cfg,
 			sampler_name = "euler",
-			scheduler = "normal",
-			positive = g:CLIPTextEncode { text = final_prompt, clip = c.clip },
-			negative = g:CLIPTextEncode { text = negative, clip = c.clip },
-			latent_image = g:EmptyLatentImage { width = width, height = height, batch_size = 1 },
+			scheduler = scheduler,
+			positive = g:CLIPTextEncode { text = final_prompt, clip = clip },
+			negative = g:CLIPTextEncode { text = negative, clip = clip },
+			latent_image = latent_image,
 			denoise = 1.0,
 		},
 	})
