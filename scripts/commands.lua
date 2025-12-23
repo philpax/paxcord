@@ -81,6 +81,7 @@ ask.default_system = "You are a helpful assistant."
 
 local paint = {}
 paint.default_negative = "text, watermark, blurry"
+paint.default_denoise = 0.8
 
 -- ============================================================================
 -- Currency data and choices for the convert command
@@ -341,7 +342,7 @@ local function get_random_model()
 end
 
 -- Shared function to generate images
-local function generate_image(prompt, negative, seed, model_info, width, height)
+local function generate_image(prompt, negative, seed, model_info, width, height, source_image_url, denoise)
 	-- Apply prompt keyword if model has one
 	local final_prompt = prompt
 	if model_info.keyword then
@@ -382,12 +383,31 @@ local function generate_image(prompt, negative, seed, model_info, width, height)
 		model, clip, vae = c.model, c.clip, c.vae
 	end
 
-	-- Create empty latent based on architecture
+	-- Create latent image (swap node based on source image presence)
 	local latent_image
-	if model_info.arch == "ZImage" then
-		latent_image = g:EmptySD3LatentImage { width = width, height = height, batch_size = 1 }
+	if source_image_url then
+		-- img2img: fetch image, upload to ComfyUI, load, scale, encode
+		output("Downloading source image...")
+		local image_data = fetch(source_image_url)
+		local uploaded = client:upload_image("source.png", image_data)
+		local loaded = g:LoadImage { image = uploaded.name }
+		local scaled = g:ImageScale {
+			image = loaded.image,
+			width = width,
+			height = height,
+			upscale_method = "bicubic",
+			crop = "disabled",
+		}
+		latent_image = g:VAEEncode { pixels = scaled, vae = vae }
+		denoise = denoise or paint.default_denoise
 	else
-		latent_image = g:EmptyLatentImage { width = width, height = height, batch_size = 1 }
+		-- txt2img: empty latent
+		if model_info.arch == "ZImage" then
+			latent_image = g:EmptySD3LatentImage { width = width, height = height, batch_size = 1 }
+		else
+			latent_image = g:EmptyLatentImage { width = width, height = height, batch_size = 1 }
+		end
+		denoise = 1.0
 	end
 
 	-- KSampler settings based on architecture
@@ -411,7 +431,7 @@ local function generate_image(prompt, negative, seed, model_info, width, height)
 			positive = g:CLIPTextEncode { text = final_prompt, clip = clip },
 			negative = g:CLIPTextEncode { text = negative, clip = clip },
 			latent_image = latent_image,
-			denoise = 1.0,
+			denoise = denoise,
 		},
 	})
 
@@ -434,6 +454,8 @@ local function generate_image(prompt, negative, seed, model_info, width, height)
 			width = width,
 			height = height,
 			seed = seed,
+			denoise = denoise,
+			img2img = source_image_url ~= nil,
 		}))
 	else
 		output("No images were generated.")
@@ -488,16 +510,42 @@ discord.register_command {
 			min_value = 0,
 			max_value = 2147483647,
 		},
+		{
+			name = "image",
+			description = "Source image for img2img (upload)",
+			type = "attachment",
+			required = false,
+		},
+		{
+			name = "image_url",
+			description = "Source image URL for img2img",
+			type = "string",
+			required = false,
+		},
+		{
+			name = "denoise",
+			description = "Denoising strength (0.0-1.0, default: "
+				.. paint.default_denoise
+				.. " for img2img, 1.0 for txt2img)",
+			type = "number",
+			required = false,
+			min_value = 0.0,
+			max_value = 1.0,
+		},
 	},
 	execute = function(interaction)
 		local prompt = interaction.options.prompt
-		local negative = interaction.options.negative or "text, watermark, blurry"
+		local negative = interaction.options.negative or paint.default_negative
 		local seed = interaction.options.seed or math.random(1, 2147483647)
 		local model_info = interaction.options.model and get_model_info(interaction.options.model) or get_random_model()
 		local width = interaction.options.width
 		local height = interaction.options.height
 
-		generate_image(prompt, negative, seed, model_info, width, height)
+		-- Get source image (prefer attachment over URL)
+		local source_image_url = interaction.options.image or interaction.options.image_url
+		local denoise = interaction.options.denoise
+
+		generate_image(prompt, negative, seed, model_info, width, height, source_image_url, denoise)
 	end,
 }
 
@@ -783,6 +831,8 @@ discord.register_reply_handler("paint", function(chain)
 	local original_width = chain.options.width
 	local original_height = chain.options.height
 	local original_negative = chain.options.negative
+	local original_denoise = nil
+	local original_img2img = false
 
 	-- If model not available, try to parse from first bot message footer
 	if not original_model then
@@ -793,6 +843,8 @@ discord.register_reply_handler("paint", function(chain)
 					original_model = parsed.model
 					original_width = original_width or parsed.width
 					original_height = original_height or parsed.height
+					original_denoise = original_denoise or parsed.denoise
+					original_img2img = parsed.img2img or false
 					break
 				end
 			end
@@ -820,6 +872,21 @@ discord.register_reply_handler("paint", function(chain)
 		error("Please provide a prompt in your reply.")
 	end
 
+	-- Only do img2img if the original was img2img
+	local source_image_url = nil
+	local denoise = nil
+	if original_img2img then
+		-- Find the last bot message with image attachments
+		for i = #chain.messages, 1, -1 do
+			local msg = chain.messages[i]
+			if msg.is_bot and #msg.attachments > 0 then
+				source_image_url = msg.attachments[1]
+				break
+			end
+		end
+		denoise = original_denoise or paint.default_denoise
+	end
+
 	-- Generate a new seed for variation
 	local new_seed = math.random(1, 2147483647)
 
@@ -827,5 +894,14 @@ discord.register_reply_handler("paint", function(chain)
 	local model_info = get_model_info(original_model)
 
 	-- Generate the image with the new prompt
-	generate_image(new_prompt, original_negative, new_seed, model_info, original_width, original_height)
+	generate_image(
+		new_prompt,
+		original_negative,
+		new_seed,
+		model_info,
+		original_width,
+		original_height,
+		source_image_url,
+		denoise
+	)
 end)

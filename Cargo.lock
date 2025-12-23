@@ -1803,7 +1803,7 @@ dependencies = [
 [[package]]
 name = "rucomfyui"
 version = "0.1.0"
-source = "git+https://github.com/philpax/rucomfyui#d2544a689cc9a8e04423dbb89edcdf3545f23a00"
+source = "git+https://github.com/philpax/rucomfyui#7fc8dff7149bce70050b9508c44911094d1ed48a"
 dependencies = [
  "futures",
  "futures-timer",
@@ -1818,7 +1818,7 @@ dependencies = [
 [[package]]
 name = "rucomfyui_mlua"
 version = "0.1.0"
-source = "git+https://github.com/philpax/rucomfyui#d2544a689cc9a8e04423dbb89edcdf3545f23a00"
+source = "git+https://github.com/philpax/rucomfyui#7fc8dff7149bce70050b9508c44911094d1ed48a"
 dependencies = [
  "convert_case",
  "mlua",
@@ -2992,7 +2992,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
