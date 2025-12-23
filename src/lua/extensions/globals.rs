@@ -74,6 +74,47 @@ pub fn register(
         })?,
     )?;
 
+    lua.globals().set(
+        "fetch",
+        lua.create_async_function(|lua, url: String| async move {
+            const MAX_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
+
+            let client = reqwest::Client::new();
+            let response = client
+                .get(&url)
+                .send()
+                .await
+                .map_err(mlua::Error::external)?;
+
+            // Check Content-Length header before downloading
+            if let Some(content_length) = response.content_length()
+                && content_length > MAX_SIZE
+            {
+                return Err(mlua::Error::external(format!(
+                    "File too large: {} bytes (max {} bytes)",
+                    content_length, MAX_SIZE
+                )));
+            }
+
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(mlua::Error::external)?;
+
+            // Check actual size after download (in case Content-Length wasn't present)
+            if bytes.len() as u64 > MAX_SIZE {
+                return Err(mlua::Error::external(format!(
+                    "File too large: {} bytes (max {} bytes)",
+                    bytes.len(),
+                    MAX_SIZE
+                )));
+            }
+
+            // Return as Lua string (binary safe)
+            lua.create_string(&bytes)
+        })?,
+    )?;
+
     Ok(())
 }
 
