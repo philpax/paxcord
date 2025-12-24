@@ -79,10 +79,6 @@ end
 local ask = {}
 ask.default_system = "You are a helpful assistant."
 
-local paint = {}
-paint.default_negative = "text, watermark, blurry"
-paint.default_denoise = 0.8
-
 -- ============================================================================
 -- Currency data and choices for the convert command
 -- ============================================================================
@@ -118,6 +114,14 @@ local currency_choices = map(currency_data, function(currency)
 	return {
 		name = code .. " (" .. name .. ")",
 		value = code,
+	}
+end)
+
+-- Build model choices for command options (uses global IMAGE_MODELS from main.lua)
+local model_choices = map(IMAGE_MODELS, function(model)
+	return {
+		name = model.name .. " (" .. model.arch .. ")",
+		value = model.name,
 	}
 end)
 
@@ -165,16 +169,14 @@ discord.register_command {
 		local system = interaction.options.system or ask.default_system
 		local seed = interaction.options.seed or math.random(1, 2147483647)
 
-		output("Generating...")
-
-		local messages = {
-			llm.system(system),
-			llm.user(prompt),
+		local response = ask_llm {
+			prompt = prompt,
+			model = model,
+			system = system,
+			seed = seed,
 		}
 
-		local response = string.trim(stream_llm_response(messages, model, seed))
-
-		output(response .. footer.serialize({ model = model, seed = seed, system = system }))
+		output(response .. footer.serialize { model = model, seed = seed, system = system })
 	end,
 }
 
@@ -268,200 +270,6 @@ discord.register_command {
 	end,
 }
 
--- Model filenames: "Name [keyword] ^ARCH.ext" where [keyword] is optional
-local model_data = {
-	"ACertainModel ^SD1.ckpt",
-	"ACertainThing ^SD1.ckpt",
-	"AbyssOrangeMix2_sfw ^SD1.safetensors",
-	"Analog [analog style] ^SD1.safetensors",
-	"Anything v3.0 ^SD1.ckpt",
-	"Cinematic Diffusion [syberart] ^SD1.ckpt",
-	"Dreamlike Photoreal 2.0 ^SD1.safetensors",
-	"Dreamlike [dreamlike art] ^SD1.ckpt",
-	"Holosomnia Landscape [holosomnialandscape] ^SD1.ckpt",
-	"Inkpunk v2 [nvinkpunk] ^SD1.ckpt",
-	"Pastel Mix ^SD1.safetensors",
-	"Stable v1.5 ^SD1.ckpt",
-	"Van Gogh v2 [lvngvncnt] ^SD1.ckpt",
-	"Vintedois v0.1 [estilovintedois] ^SD1.ckpt",
-	"seek.art MEGA ^SD1.ckpt",
-	"Stable v2.1 ^SD2.ckpt",
-	"SDXL 1.0 ^SDXL.safetensors",
-	"SDXL Turbo 1.0 ^SDXL.safetensors",
-	"Nova Orange XL v13.0 ^SDXL.safetensors",
-	"Nova Anime XL IL v14.0 ^SDXL.safetensors",
-	"Illustrious v2.0 ^SDXL.safetensors",
-	"Z Image Turbo ^ZImage.safetensors",
-}
-
--- Default dimensions per architecture
-local arch_defaults = {
-	SD1 = { width = 512, height = 512 },
-	SD2 = { width = 768, height = 768 },
-	SDXL = { width = 1024, height = 1024 },
-	ZImage = { width = 1024, height = 1024 },
-}
-
--- Parse a model filename into its components
-local function parse_model_filename(filename)
-	-- Extract keyword if present: [keyword]
-	local keyword = filename:match("%[([^%]]+)%]")
-
-	-- Extract architecture: ^ARCH
-	local arch = filename:match("%^(%w+)")
-
-	-- Extract display name: everything before [keyword] or ^ARCH
-	local name = filename:match("^(.-)%s*%[") or filename:match("^(.-)%s*%^")
-
-	return {
-		filename = filename,
-		name = name,
-		arch = arch,
-		keyword = keyword,
-	}
-end
-
--- Build model choices for command options
-local model_choices = map(model_data, function(filename)
-	local info = parse_model_filename(filename)
-	return {
-		name = info.name .. " (" .. info.arch .. ")",
-		value = filename,
-	}
-end)
-
--- Helper to get model info by filename
-local function get_model_info(filename)
-	return parse_model_filename(filename)
-end
-
--- Helper to get random model
-local function get_random_model()
-	local idx = math.random(1, #model_data)
-	return parse_model_filename(model_data[idx])
-end
-
--- Shared function to generate images
-local function generate_image(prompt, negative, seed, model_info, width, height, source_image_url, denoise)
-	-- Apply prompt keyword if model has one
-	local final_prompt = prompt
-	if model_info.keyword then
-		final_prompt = prompt .. ", " .. model_info.keyword
-	end
-
-	-- Use architecture defaults if dimensions not specified
-	local defaults = arch_defaults[model_info.arch]
-	width = width or defaults.width
-	height = height or defaults.height
-
-	output("Connecting to ComfyUI...")
-
-	-- Get client and object info (lazily cached)
-	local client = get_comfy_client()
-	local object_info = get_comfy_object_info()
-
-	output("Building workflow...")
-
-	-- Create the graph
-	local g = comfy.graph(object_info)
-
-	-- Load model, clip, and vae based on architecture
-	local model, clip, vae
-	if model_info.arch == "ZImage" then
-		model = g:UNETLoader {
-			unet_name = "z_image_turbo_bf16.safetensors",
-			weight_dtype = "default",
-		}
-		clip = g:CLIPLoader {
-			clip_name = "qwen_3_4b.safetensors",
-			device = "default",
-			type = "lumina2",
-		}
-		vae = g:VAELoader("flux1_ae.safetensors")
-	else
-		local c = g:CheckpointLoaderSimple(model_info.filename)
-		model, clip, vae = c.model, c.clip, c.vae
-	end
-
-	-- Create latent image (swap node based on source image presence)
-	local latent_image
-	if source_image_url then
-		-- img2img: fetch image, upload to ComfyUI, load, scale, encode
-		output("Downloading source image...")
-		local image_data = fetch(source_image_url)
-		local uploaded = client:upload_image("source.png", image_data)
-		local loaded = g:LoadImage { image = uploaded.name }
-		local scaled = g:ImageScale {
-			image = loaded.image,
-			width = width,
-			height = height,
-			upscale_method = "bicubic",
-			crop = "disabled",
-		}
-		latent_image = g:VAEEncode { pixels = scaled, vae = vae }
-		denoise = denoise or paint.default_denoise
-	else
-		-- txt2img: empty latent
-		if model_info.arch == "ZImage" then
-			latent_image = g:EmptySD3LatentImage { width = width, height = height, batch_size = 1 }
-		else
-			latent_image = g:EmptyLatentImage { width = width, height = height, batch_size = 1 }
-		end
-		denoise = 1.0
-	end
-
-	-- KSampler settings based on architecture
-	local steps, cfg, scheduler
-	if model_info.arch == "ZImage" then
-		steps, cfg, scheduler = 9, 1.0, "simple"
-	else
-		steps, cfg, scheduler = 20, 8.0, "normal"
-	end
-
-	-- Build the workflow
-	local preview = g:PreviewImage(g:VAEDecode {
-		vae = vae,
-		samples = g:KSampler {
-			model = model,
-			seed = seed,
-			steps = steps,
-			cfg = cfg,
-			sampler_name = "euler",
-			scheduler = scheduler,
-			positive = g:CLIPTextEncode { text = final_prompt, clip = clip },
-			negative = g:CLIPTextEncode { text = negative, clip = clip },
-			latent_image = latent_image,
-			denoise = denoise,
-		},
-	})
-
-	output("Generating image (seed: " .. seed .. ")...")
-
-	-- Queue the workflow and wait for results
-	local result = client:easy_queue(g)
-
-	-- Get the images from the preview node
-	local images = result[preview].images
-
-	if #images > 0 then
-		-- Attach each generated image
-		for i, image_data in ipairs(images) do
-			attach("image_" .. seed .. "_" .. i .. ".png", image_data)
-		end
-		output(footer.serialize({
-			prompt = prompt,
-			model = model_info.filename,
-			width = width,
-			height = height,
-			seed = seed,
-			denoise = denoise,
-			img2img = source_image_url ~= nil,
-		}))
-	else
-		output("No images were generated.")
-	end
-end
-
 -- Register the /paint command
 discord.register_command {
 	name = "paint",
@@ -525,7 +333,7 @@ discord.register_command {
 		{
 			name = "denoise",
 			description = "Denoising strength (0.0-1.0, default: "
-				.. paint.default_denoise
+				.. IMAGE_DEFAULTS.denoise
 				.. " for img2img, 1.0 for txt2img)",
 			type = "number",
 			required = false,
@@ -534,18 +342,27 @@ discord.register_command {
 		},
 	},
 	execute = function(interaction)
-		local prompt = interaction.options.prompt
-		local negative = interaction.options.negative or paint.default_negative
-		local seed = interaction.options.seed or math.random(1, 2147483647)
-		local model_info = interaction.options.model and get_model_info(interaction.options.model) or get_random_model()
-		local width = interaction.options.width
-		local height = interaction.options.height
+		local result = generate_image {
+			prompt = interaction.options.prompt,
+			model = interaction.options.model,
+			negative = interaction.options.negative,
+			seed = interaction.options.seed,
+			width = interaction.options.width,
+			height = interaction.options.height,
+			source_image_url = interaction.options.image or interaction.options.image_url,
+			denoise = interaction.options.denoise,
+		}
 
-		-- Get source image (prefer attachment over URL)
-		local source_image_url = interaction.options.image or interaction.options.image_url
-		local denoise = interaction.options.denoise
-
-		generate_image(prompt, negative, seed, model_info, width, height, source_image_url, denoise)
+		attach("image_" .. result.seed .. ".png", result.image)
+		output(footer.serialize {
+			prompt = result.prompt,
+			model = result.model,
+			width = result.width,
+			height = result.height,
+			seed = result.seed,
+			denoise = result.denoise,
+			img2img = result.img2img,
+		})
 	end,
 }
 
@@ -614,7 +431,7 @@ discord.register_command {
 			table.insert(responses, { model = model, response = "" })
 			output(format_output())
 
-			llm.stream({
+			llm.stream {
 				messages = messages,
 				model = model,
 				seed = seed,
@@ -623,7 +440,7 @@ discord.register_command {
 					output(format_output())
 					return true
 				end,
-			})
+			}
 		end
 	end,
 }
@@ -672,11 +489,7 @@ discord.register_command {
 		},
 	},
 	execute = function(interaction)
-		local negative = interaction.options.negative or "text, watermark, blurry"
 		local seed = interaction.options.seed or math.random(1, 2147483647)
-		local model_info = interaction.options.model and get_model_info(interaction.options.model) or get_random_model()
-		local width = interaction.options.width
-		local height = interaction.options.height
 
 		output("Generating prompt...")
 
@@ -687,7 +500,25 @@ discord.register_command {
 		output("Generated prompt: " .. prompt)
 
 		-- Generate the image using the generated prompt
-		generate_image(prompt, negative, seed, model_info, width, height)
+		local result = generate_image {
+			prompt = prompt,
+			model = interaction.options.model,
+			negative = interaction.options.negative,
+			seed = seed,
+			width = interaction.options.width,
+			height = interaction.options.height,
+		}
+
+		attach("image_" .. result.seed .. ".png", result.image)
+		output(footer.serialize {
+			prompt = result.prompt,
+			model = result.model,
+			width = result.width,
+			height = result.height,
+			seed = result.seed,
+			denoise = result.denoise,
+			img2img = result.img2img,
+		})
 	end,
 }
 
@@ -747,10 +578,14 @@ discord.register_reply_handler("ask", function(chain)
 		end
 	end
 
-	-- Stream the response
-	local response = string.trim(stream_llm_response(messages, model, original_seed))
+	-- Stream the response using ask_llm with pre-built messages
+	local response = ask_llm {
+		messages = messages,
+		model = model,
+		seed = original_seed,
+	}
 
-	output(response .. footer.serialize({ model = model, seed = original_seed, system = system }))
+	output(response .. footer.serialize { model = model, seed = original_seed, system = system })
 end)
 
 -- Register the /translate command
@@ -809,18 +644,14 @@ discord.register_command {
 		local seed = interaction.options.seed or math.random(1, 2147483647)
 		local model = "gpu:qwen3-30b-a3b-instruct-2507"
 
-		output("Translating...")
-
-		local messages = {
-			llm.system(
-				"You are a translator. Translate the user's text to the specified language. Output only the translation, nothing else."
-			),
-			llm.user("Translate to " .. language .. ":\n\n" .. text),
+		local response = ask_llm {
+			prompt = "Translate to " .. language .. ":\n\n" .. text,
+			model = model,
+			system = "You are a translator. Translate the user's text to the specified language. Output only the translation, nothing else.",
+			seed = seed,
 		}
 
-		local response = string.trim(stream_llm_response(messages, model, seed))
-
-		output(response .. footer.serialize({ model = model, seed = seed, language = language }))
+		output(response .. footer.serialize { model = model, seed = seed, language = language })
 	end,
 }
 
@@ -848,25 +679,8 @@ discord.register_command {
 			error("Please provide an image (upload or URL)")
 		end
 
-		local model = "gpu:qwen3-vl-30b-a3b-instruct"
-		local seed = math.random(1, 2147483647)
-
-		output("Downloading image...")
-		local image_data = fetch(image_url)
-
-		output("Extracting text...")
-		local messages = {
-			llm.user {
-				{
-					type = "text",
-					text = "Perform OCR on this image. Transcribe all text visible in this image. Output only the transcribed text with no additional commentary.",
-				},
-				{ type = "image", data = image_data },
-			},
-		}
-
-		local response = string.trim(stream_llm_response(messages, model, seed))
-		output(response)
+		local result = ocr { image_url = image_url }
+		output(result)
 	end,
 }
 
@@ -900,23 +714,11 @@ discord.register_command {
 			error("Please provide an image (upload or URL)")
 		end
 
-		local prompt = interaction.options.prompt or "Describe this image in detail."
-		local model = "gpu:qwen3-vl-30b-a3b-instruct"
-		local seed = math.random(1, 2147483647)
-
-		output("Downloading image...")
-		local image_data = fetch(image_url)
-
-		output("Analyzing image...")
-		local messages = {
-			llm.user {
-				{ type = "text", text = prompt },
-				{ type = "image", data = image_data },
-			},
+		local result = describe_image {
+			image_url = image_url,
+			prompt = interaction.options.prompt,
 		}
-
-		local response = string.trim(stream_llm_response(messages, model, seed))
-		output(response)
+		output(result)
 	end,
 }
 
@@ -953,7 +755,7 @@ discord.register_reply_handler("paint", function(chain)
 	end
 
 	-- Default negative prompt
-	original_negative = original_negative or paint.default_negative
+	original_negative = original_negative or IMAGE_DEFAULTS.negative
 
 	-- Get the new prompt from the latest user message
 	local new_prompt = nil
@@ -980,24 +782,32 @@ discord.register_reply_handler("paint", function(chain)
 				break
 			end
 		end
-		denoise = original_denoise or paint.default_denoise
+		denoise = original_denoise or IMAGE_DEFAULTS.denoise
 	end
 
 	-- Generate a new seed for variation
 	local new_seed = math.random(1, 2147483647)
 
-	-- Get model info from the original model
-	local model_info = get_model_info(original_model)
-
 	-- Generate the image with the new prompt
-	generate_image(
-		new_prompt,
-		original_negative,
-		new_seed,
-		model_info,
-		original_width,
-		original_height,
-		source_image_url,
-		denoise
-	)
+	local result = generate_image {
+		prompt = new_prompt,
+		model = original_model,
+		negative = original_negative,
+		seed = new_seed,
+		width = original_width,
+		height = original_height,
+		source_image_url = source_image_url,
+		denoise = denoise,
+	}
+
+	attach("image_" .. result.seed .. ".png", result.image)
+	output(footer.serialize {
+		prompt = result.prompt,
+		model = result.model,
+		width = result.width,
+		height = result.height,
+		seed = result.seed,
+		denoise = result.denoise,
+		img2img = result.img2img,
+	})
 end)
