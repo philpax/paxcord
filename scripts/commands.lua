@@ -655,6 +655,146 @@ discord.register_command {
 	end,
 }
 
+-- System prompts for FPS prompt sanitization
+local fpsprompt_system_hand = [[
+Rewrite prompts for first-person image generation. Output ONLY the rewritten prompt in <=50 words, no commentary.
+
+RULES:
+- First-person view, 16:9, gloved hand holding an item in lower-right corner (partially cropped by frame edge)
+- No gore, no brands/IP, no text in scene
+- Sharp, stable framing, clear edges
+
+EXAMPLES:
+- "zombie apocalypse shotgun" -> "First-person view, abandoned city street, gloved hand gripping pump-action shotgun in lower-right corner partially cropped by frame edge, debris and overturned cars, overcast sky, sharp stable framing"
+- "fantasy dungeon exploration" -> "First-person view, torch-lit stone dungeon corridor, gloved hand holding lantern in lower-right corner partially cropped by frame edge, ancient pillars, glowing runes on walls, dramatic lighting"
+- "space station corridor" -> "First-person view, sleek white sci-fi corridor with blue accent lighting, gloved hand gripping scanner device in lower-right corner partially cropped by frame edge, windows showing stars, clean sharp edges"
+]]
+
+local fpsprompt_system_no_hand = [[
+Rewrite prompts for first-person image generation. Output ONLY the rewritten prompt in <=50 words, no commentary.
+
+RULES:
+- First-person view, 16:9, no hands or body parts visible
+- No gore, no brands/IP, no text in scene
+- Sharp, stable framing, clear edges
+
+EXAMPLES:
+- "zombie apocalypse" -> "First-person view, abandoned city street, debris and overturned cars, distant shambling figures, overcast sky, sharp stable framing"
+- "fantasy dungeon exploration" -> "First-person view, torch-lit stone dungeon corridor, ancient pillars, glowing runes on walls, dramatic lighting, sharp edges"
+- "space station corridor" -> "First-person view, sleek white sci-fi corridor with blue accent lighting, windows showing stars, clean sharp edges, stable framing"
+]]
+
+local function get_fpsprompt_system(no_hand)
+	if no_hand then
+		return fpsprompt_system_no_hand
+	end
+	return fpsprompt_system_hand
+end
+
+-- Register the /perchancefpsprompt command
+discord.register_command {
+	name = "perchancefpsprompt",
+	description = "Generate random FPS-style image prompts using Perchance + LLM sanitization",
+	options = {
+		{
+			name = "count",
+			description = "Number of prompts to generate (default: 5)",
+			type = "integer",
+			required = false,
+			min_value = 1,
+			max_value = 10,
+		},
+		{
+			name = "no_hand",
+			description = "Disable gloved hand holding item (default: false)",
+			type = "boolean",
+			required = false,
+		},
+		{
+			name = "seed",
+			description = "Random seed for deterministic output",
+			type = "integer",
+			required = false,
+			min_value = 0,
+			max_value = 2147483647,
+		},
+	},
+	execute = function(interaction)
+		local count = interaction.options.count or 5
+		local no_hand = interaction.options.no_hand or false
+		local seed = interaction.options.seed or math.random(1, 2147483647)
+		local model = GPU_2_RESIDENT_MODEL
+		local generator = "output = {import:prompt_generator}"
+		local system = get_fpsprompt_system(no_hand)
+
+		output("Generating " .. count .. " FPS prompts (seed: " .. seed .. ")...")
+
+		local results = {}
+		for i = 0, count - 1 do
+			local raw_prompt = perchance.run(generator, seed + i)
+
+			output("Generating " .. count .. " FPS prompts (seed: " .. seed .. ")...\n\nSanitizing prompt " .. (i + 1) .. "/" .. count .. "...")
+
+			local sanitized = ask_llm {
+				prompt = raw_prompt,
+				model = model,
+				system = system,
+				seed = seed + i,
+			}
+
+			table.insert(results, (i + 1) .. ". " .. string.trim(sanitized))
+
+			output("Generating " .. count .. " FPS prompts (seed: " .. seed .. ")...\n\n" .. table.concat(results, "\n\n"))
+		end
+
+		output(table.concat(results, "\n\n"))
+	end,
+}
+
+-- Register the /transformfpsprompt command
+discord.register_command {
+	name = "transformfpsprompt",
+	description = "Transform a prompt into FPS-style image generation format",
+	options = {
+		{
+			name = "prompt",
+			description = "The prompt to transform",
+			type = "string",
+			required = true,
+		},
+		{
+			name = "no_hand",
+			description = "Disable gloved hand holding item (default: false)",
+			type = "boolean",
+			required = false,
+		},
+		{
+			name = "seed",
+			description = "Random seed for deterministic output",
+			type = "integer",
+			required = false,
+			min_value = 0,
+			max_value = 2147483647,
+		},
+	},
+	execute = function(interaction)
+		local prompt = interaction.options.prompt
+		local no_hand = interaction.options.no_hand or false
+		local seed = interaction.options.seed or math.random(1, 2147483647)
+		local model = GPU_2_RESIDENT_MODEL
+		local system = get_fpsprompt_system(no_hand)
+
+		local sanitized = ask_llm {
+			prompt = prompt,
+			model = model,
+			system = system,
+			seed = seed,
+		}
+
+		output(string.trim(sanitized) .. footer.serialize { seed = seed, no_hand = no_hand })
+	end,
+}
+
 -- Register the /ocr command
 discord.register_command {
 	name = "ocr",
