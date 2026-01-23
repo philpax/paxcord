@@ -115,6 +115,9 @@ map = table.map
 filter = table.filter
 reduce = table.reduce
 
+-- LLM model that stays resident on GPU 2
+GPU_2_RESIDENT_MODEL = "gpu:qwen3-vl-30b-a3b-instruct"
+
 -- ComfyUI lazy loading helpers
 local comfy_client = nil
 local comfy_object_info = nil
@@ -225,7 +228,7 @@ function ocr(opts)
 	end
 
 	local out = opts.output or output
-	local model = opts.model or "gpu:qwen3-vl-30b-a3b-instruct"
+	local model = opts.model or GPU_2_RESIDENT_MODEL
 	local seed = opts.seed or math.random(1, 2147483647)
 
 	-- Fetch image if URL provided
@@ -283,7 +286,7 @@ function describe_image(opts)
 
 	local out = opts.output or output
 	local prompt = opts.prompt or "Describe this image in detail."
-	local model = opts.model or "gpu:qwen3-vl-30b-a3b-instruct"
+	local model = opts.model or GPU_2_RESIDENT_MODEL
 	local seed = opts.seed or math.random(1, 2147483647)
 
 	-- Fetch image if URL provided

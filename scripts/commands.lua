@@ -642,7 +642,7 @@ discord.register_command {
 		local text = interaction.options.text
 		local language = interaction.options.language
 		local seed = interaction.options.seed or math.random(1, 2147483647)
-		local model = "gpu:qwen3-30b-a3b-instruct-2507"
+		local model = GPU_2_RESIDENT_MODEL
 
 		local response = ask_llm {
 			prompt = "Translate to " .. language .. ":\n\n" .. text,
