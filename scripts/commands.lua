@@ -510,15 +510,7 @@ discord.register_command {
 		}
 
 		attach("image_" .. result.seed .. ".png", result.image)
-		output(footer.serialize {
-			prompt = result.prompt,
-			model = result.model,
-			width = result.width,
-			height = result.height,
-			seed = result.seed,
-			denoise = result.denoise,
-			img2img = result.img2img,
-		})
+		output("")
 	end,
 }
 
@@ -651,7 +643,7 @@ discord.register_command {
 			seed = seed,
 		}
 
-		output(response .. footer.serialize { model = model, seed = seed, language = language })
+		output(response)
 	end,
 }
 
@@ -791,7 +783,7 @@ discord.register_command {
 			seed = seed,
 		}
 
-		output(string.trim(sanitized) .. footer.serialize { seed = seed, no_hand = no_hand })
+		output(string.trim(sanitized))
 	end,
 }
 
