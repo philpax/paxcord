@@ -135,12 +135,17 @@ discord.register_command {
 			description = "The model to use",
 			type = "string",
 			required = true,
-			choices = map(llm.models, function(model)
-				return {
-					name = model,
-					value = model,
-				}
-			end),
+			choices = map(
+				filter(llm.models, function(m)
+					return m.metadata.discord_visible
+				end),
+				function(m)
+					return {
+						name = m.id,
+						value = m.id,
+					}
+				end
+			),
 		},
 		{
 			name = "prompt",
@@ -399,18 +404,9 @@ discord.register_command {
 		local prompt = interaction.options.prompt
 		local system_prompt = interaction.options.system or askchorus_default_system
 		local seed = interaction.options.seed or math.random(1, 2147483647)
-		local models = {
-			"gpu:qwen3-4b-instruct",
-			"gpu:gemma-3n-e4b-it",
-			"gpu:gpt-oss-20b",
-			"gpu:mistral-small-3.2-24b-instruct-2506",
-			"gpu:gemma-3-27b-it",
-			"gpu:gemma-3-27b-it-abliterated",
-			"gpu:gemma-3-glitter-27b",
-			"gpu:qwen3-30b-a3b-instruct-2507",
-			"gpu:glm-4-32b-0414",
-			"gpu:qwen3-32b",
-		}
+		local models = filter(llm.models, function(m)
+			return m.metadata.discord_visible
+		end)
 
 		local messages = {
 			llm.system(system_prompt),
@@ -427,13 +423,13 @@ discord.register_command {
 			return table.concat(parts)
 		end
 
-		for _, model in ipairs(models) do
-			table.insert(responses, { model = model, response = "" })
+		for _, m in ipairs(models) do
+			table.insert(responses, { model = m.id, response = "" })
 			output(format_output())
 
 			llm.stream {
 				messages = messages,
-				model = model,
+				model = m.id,
 				seed = seed,
 				callback = function(chunk)
 					responses[#responses].response = chunk
@@ -634,7 +630,7 @@ discord.register_command {
 		local text = interaction.options.text
 		local language = interaction.options.language
 		local seed = interaction.options.seed or math.random(1, 2147483647)
-		local model = GPU_2_RESIDENT_MODEL
+		local model = RESIDENT_MODEL
 
 		local response = ask_llm {
 			prompt = "Translate to " .. language .. ":\n\n" .. text,
@@ -715,7 +711,7 @@ discord.register_command {
 		local count = interaction.options.count or 5
 		local no_hand = interaction.options.no_hand or false
 		local seed = interaction.options.seed or math.random(1, 2147483647)
-		local model = GPU_2_RESIDENT_MODEL
+		local model = RESIDENT_MODEL
 		local generator = "output = {import:prompt_generator}"
 		local system = get_fpsprompt_system(no_hand)
 
@@ -773,7 +769,7 @@ discord.register_command {
 		local prompt = interaction.options.prompt
 		local no_hand = interaction.options.no_hand or false
 		local seed = interaction.options.seed or math.random(1, 2147483647)
-		local model = GPU_2_RESIDENT_MODEL
+		local model = RESIDENT_MODEL
 		local system = get_fpsprompt_system(no_hand)
 
 		local sanitized = ask_llm {

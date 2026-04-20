@@ -1,19 +1,21 @@
 use std::sync::Arc;
 
-use async_openai::types::{
+use async_openai::types::chat::{
     ChatCompletionRequestAssistantMessage, ChatCompletionRequestMessage,
     ChatCompletionRequestMessageContentPartImage, ChatCompletionRequestMessageContentPartText,
     ChatCompletionRequestSystemMessage, ChatCompletionRequestUserMessage,
     ChatCompletionRequestUserMessageContent, ChatCompletionRequestUserMessageContentPart,
     CreateChatCompletionRequestArgs, ImageDetail, ImageUrl,
 };
+use mlua::LuaSerdeExt as _;
 use serenity::futures::StreamExt as _;
 
 use crate::ai::Ai;
 
 pub fn register(lua: &mlua::Lua, ai: Arc<Ai>) -> mlua::Result<()> {
     let llm = lua.create_table()?;
-    llm.set("models", ai.models.clone())?;
+
+    llm.set("models", lua.to_value(&ai.models)?)?;
 
     register_message(lua, &llm, "system")?;
     register_message(lua, &llm, "user")?;
@@ -156,7 +158,7 @@ async fn create_chat_stream(
 ) -> mlua::Result<
     impl serenity::futures::Stream<
         Item = Result<
-            async_openai::types::CreateChatCompletionStreamResponse,
+            async_openai::types::chat::CreateChatCompletionStreamResponse,
             async_openai::error::OpenAIError,
         >,
     >,

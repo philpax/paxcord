@@ -115,8 +115,18 @@ map = table.map
 filter = table.filter
 reduce = table.reduce
 
--- LLM model that stays resident on GPU 2
-GPU_2_RESIDENT_MODEL = "gpu:qwen3-vl-30b-a3b-instruct"
+-- Default LLM for helpers that don't take an explicit `model` argument
+-- (OCR, image description, translation). Sourced from ananke: exactly
+-- one model must carry `metadata.resident = true`.
+local resident_models = filter(llm.models, function(m)
+	return m.metadata.resident
+end)
+if #resident_models ~= 1 then
+	error(
+		"expected exactly one model with metadata.resident = true, found " .. #resident_models
+	)
+end
+RESIDENT_MODEL = resident_models[1].id
 
 -- ComfyUI lazy loading helpers
 local comfy_client = nil
@@ -211,7 +221,7 @@ end
 --- @param opts table Options table
 ---   - image_url: string (optional) URL of the image to process
 ---   - image_data: string (optional) Raw image data (binary)
----   - model: string (optional) Vision model to use (default: "gpu:qwen3-vl-30b-a3b-instruct")
+---   - model: string (optional) Vision model to use (default: "qwen3.6-35b-a3b")
 ---   - seed: number (optional) Random seed
 ---   - output: function (optional) Output callback (default: output)
 --- @return string The extracted text
@@ -228,7 +238,7 @@ function ocr(opts)
 	end
 
 	local out = opts.output or output
-	local model = opts.model or GPU_2_RESIDENT_MODEL
+	local model = opts.model or RESIDENT_MODEL
 	local seed = opts.seed or math.random(1, 2147483647)
 
 	-- Fetch image if URL provided
@@ -268,7 +278,7 @@ end
 ---   - image_url: string (optional) URL of the image to describe
 ---   - image_data: string (optional) Raw image data (binary)
 ---   - prompt: string (optional) Custom prompt (default: "Describe this image in detail.")
----   - model: string (optional) Vision model to use (default: "gpu:qwen3-vl-30b-a3b-instruct")
+---   - model: string (optional) Vision model to use (default: "qwen3.6-35b-a3b")
 ---   - seed: number (optional) Random seed
 ---   - output: function (optional) Output callback (default: output)
 --- @return string The description
@@ -286,7 +296,7 @@ function describe_image(opts)
 
 	local out = opts.output or output
 	local prompt = opts.prompt or "Describe this image in detail."
-	local model = opts.model or GPU_2_RESIDENT_MODEL
+	local model = opts.model or RESIDENT_MODEL
 	local seed = opts.seed or math.random(1, 2147483647)
 
 	-- Fetch image if URL provided
