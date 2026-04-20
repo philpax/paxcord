@@ -1,8 +1,15 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Duration};
 
 use serde::Deserialize;
 
 use crate::config::Configuration;
+
+/// Initial delay before the first retry. Doubles on each subsequent
+/// failure up to [`RETRY_MAX_DELAY`]. Total wait before giving up on
+/// the defaults is ~30s (see [`RETRY_ATTEMPTS`]).
+const RETRY_INITIAL_DELAY: Duration = Duration::from_millis(500);
+const RETRY_MAX_DELAY: Duration = Duration::from_secs(8);
+const RETRY_ATTEMPTS: u32 = 6;
 
 /// Mirror of ananke's `/v1/models` entry — only `id` and the non-standard
 /// `ananke_metadata` passthrough matter to paxcord. `object`/`created`/
@@ -42,10 +49,42 @@ impl Ai {
             config
         });
 
-        let resp: ModelsResponse = client.models().list_byot().await?;
+        let resp = fetch_models_with_backoff(&client).await?;
         Ok(Self {
             client,
             models: resp.data,
         })
     }
+}
+
+/// Poll `GET /v1/models` with exponential backoff. Ananke can take a
+/// few seconds after systemd reports the unit as started before the
+/// OpenAI proxy is accepting connections (schema migrations + spawning
+/// persistent services), and `after = [ "ananke.service" ]` in the
+/// paxcord systemd unit doesn't guarantee readiness. Rather than gate
+/// paxcord's startup on a shell-level health probe, swallow the
+/// expected early failures here.
+async fn fetch_models_with_backoff(
+    client: &async_openai::Client<async_openai::config::OpenAIConfig>,
+) -> anyhow::Result<ModelsResponse> {
+    let mut delay = RETRY_INITIAL_DELAY;
+    for attempt in 1..=RETRY_ATTEMPTS {
+        match client.models().list_byot::<ModelsResponse>().await {
+            Ok(resp) => return Ok(resp),
+            Err(err) if attempt == RETRY_ATTEMPTS => {
+                return Err(anyhow::Error::new(err).context(format!(
+                    "failed to fetch /v1/models after {RETRY_ATTEMPTS} attempts"
+                )));
+            }
+            Err(err) => {
+                eprintln!(
+                    "paxcord: /v1/models attempt {attempt}/{RETRY_ATTEMPTS} failed ({err}); retrying in {:?}",
+                    delay
+                );
+                tokio::time::sleep(delay).await;
+                delay = (delay * 2).min(RETRY_MAX_DELAY);
+            }
+        }
+    }
+    unreachable!("retry loop always returns inside the match")
 }
