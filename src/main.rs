@@ -21,6 +21,7 @@ mod constant;
 mod currency;
 mod interaction_context;
 mod lua;
+mod markdown_chunk;
 mod outputter;
 mod reply_handler;
 mod util;

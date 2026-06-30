@@ -222,7 +222,7 @@ impl Outputter {
     }
 
     async fn update(&mut self, message: &str) -> anyhow::Result<()> {
-        self.chunks = chunk_message(message, Self::MESSAGE_CHUNK_SIZE);
+        self.chunks = crate::markdown_chunk::chunk_message(message, Self::MESSAGE_CHUNK_SIZE);
         self.sync_if_pending().await
     }
 
@@ -354,25 +354,4 @@ async fn reply_to_message_without_mentions(
                 .allowed_mentions(CreateAllowedMentions::new()),
         )
         .await?)
-}
-
-fn chunk_message(message: &str, chunk_size: usize) -> Vec<String> {
-    let mut chunks: Vec<String> = vec!["".to_string()];
-
-    for word in message.split(' ') {
-        let Some(last) = chunks.last_mut() else {
-            continue;
-        };
-
-        if last.len() > chunk_size {
-            chunks.push(word.to_string());
-        } else {
-            if !last.is_empty() {
-                last.push(' ');
-            }
-            last.push_str(word);
-        }
-    }
-
-    chunks
 }
