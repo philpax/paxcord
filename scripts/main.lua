@@ -503,7 +503,7 @@ function generate_image(opts)
 	end
 
 	-- Build the workflow
-	local preview = g:PreviewImage(g:VAEDecode {
+	local preview_node = g:PreviewImage(g:VAEDecode {
 		vae = vae,
 		samples = g:KSampler {
 			model = model,
@@ -521,11 +521,22 @@ function generate_image(opts)
 
 	out("Generating image (seed: " .. seed .. ")...")
 
-	-- Queue the workflow and wait for results
-	local result = client:easy_queue(g)
+	-- Queue the workflow and stream progress back to Discord as it renders.
+	local result = client:execute(g, {
+		on_event = function(event)
+			-- Only surface multi-step progress (the sampler); single-step nodes
+			-- like loaders and VAE decode would otherwise flicker "0/1".
+			if event.type == "progress" and event.max and event.max > 1 then
+				out(string.format("Generating image (seed: %d)... step %d/%d", seed, event.value, event.max))
+			elseif event.type == "preview" and event.data then
+				local ext = event.format == "png" and "png" or "jpg"
+				preview("preview_" .. seed .. "." .. ext, event.data)
+			end
+		end,
+	})
 
 	-- Get the images from the preview node
-	local images = result[preview].images
+	local images = result[preview_node].images
 
 	if #images == 0 then
 		error("No images were generated.")

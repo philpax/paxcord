@@ -12,6 +12,7 @@ use crate::lua::extensions::Attachment;
 enum OutputterCommand {
     Update(String),
     AddAttachment(Attachment),
+    SetPreview(Attachment),
     Error(String),
     Cancelled,
     Finish,
@@ -55,6 +56,8 @@ impl OutputterHandle {
                 messages: vec![starting_message],
                 chunks: vec![],
                 pending_attachments: vec![],
+                live_preview: None,
+                live_preview_dirty: false,
                 in_terminal_state: false,
                 last_update: std::time::Instant::now(),
                 last_update_duration: std::time::Duration::from_millis(update_interval_ms),
@@ -106,6 +109,8 @@ impl OutputterHandle {
                 messages: vec![starting_message],
                 chunks: vec![],
                 pending_attachments: vec![],
+                live_preview: None,
+                live_preview_dirty: false,
                 in_terminal_state: false,
                 last_update: std::time::Instant::now(),
                 last_update_duration: std::time::Duration::from_millis(update_interval_ms),
@@ -139,6 +144,10 @@ impl OutputterHandle {
         let _ = self.tx.send(OutputterCommand::AddAttachment(attachment));
     }
 
+    pub fn set_preview(&self, attachment: Attachment) {
+        let _ = self.tx.send(OutputterCommand::SetPreview(attachment));
+    }
+
     pub fn error(&self, err: &str) {
         let _ = self.tx.send(OutputterCommand::Error(err.to_string()));
     }
@@ -167,6 +176,13 @@ struct Outputter {
     chunks: Vec<String>,
     pending_attachments: Vec<CreateAttachment>,
 
+    /// Latest live-preview image (e.g. an in-progress render). Shown on the
+    /// last message during streaming and superseded by any final attachments.
+    live_preview: Option<Attachment>,
+    /// Whether `live_preview` has changed since it was last synced to Discord,
+    /// so content-only edits don't re-upload the image every tick.
+    live_preview_dirty: bool,
+
     in_terminal_state: bool,
 
     last_update: std::time::Instant,
@@ -194,6 +210,9 @@ impl Outputter {
                         }
                         Some(OutputterCommand::AddAttachment(attachment)) => {
                             self.add_attachment(attachment);
+                        }
+                        Some(OutputterCommand::SetPreview(attachment)) => {
+                            self.set_preview(attachment).await?;
                         }
                         Some(OutputterCommand::Error(err)) => {
                             self.on_error(&err).await?;
@@ -247,6 +266,12 @@ impl Outputter {
         ));
     }
 
+    async fn set_preview(&mut self, attachment: Attachment) -> anyhow::Result<()> {
+        self.live_preview = Some(attachment);
+        self.live_preview_dirty = true;
+        self.sync_if_pending().await
+    }
+
     async fn finish(&mut self) -> anyhow::Result<()> {
         for msg in &mut self.messages {
             msg.edit(&self.http, EditMessage::new().components(vec![]))
@@ -271,10 +296,29 @@ impl Outputter {
     }
 
     async fn sync_messages_with_chunks(&mut self) -> anyhow::Result<()> {
-        // Update existing messages to match chunks
-        for (msg, chunk) in self.messages.iter_mut().zip(self.chunks.iter()) {
-            msg.edit(&self.http, EditMessage::new().content(chunk))
-                .await?;
+        // Update existing messages to match chunks. The final message also
+        // carries the latest live preview (throttled: only re-uploaded when it
+        // changed), folded into the same edit so it's one call, not two. Final
+        // attachments supersede it at finish.
+        let last_index = self.chunks.len().saturating_sub(1);
+        let mut preview_applied = false;
+        for (i, (msg, chunk)) in self.messages.iter_mut().zip(self.chunks.iter()).enumerate() {
+            let mut edit = EditMessage::new().content(chunk);
+            if i == last_index
+                && !self.in_terminal_state
+                && self.live_preview_dirty
+                && let Some(preview) = self.live_preview.as_ref()
+            {
+                edit = edit.new_attachment(CreateAttachment::bytes(
+                    preview.data.clone(),
+                    preview.filename.clone(),
+                ));
+                preview_applied = true;
+            }
+            msg.edit(&self.http, edit).await?;
+        }
+        if preview_applied {
+            self.live_preview_dirty = false;
         }
 
         if self.chunks.len() < self.messages.len() {

@@ -8,6 +8,10 @@ const DEFAULT_CHANNELS_KEY: usize = 0;
 pub struct Attachment {
     pub filename: String,
     pub data: Vec<u8>,
+    /// If true, this is a live preview that replaces the message's current
+    /// preview image (e.g. an in-progress render) rather than a final
+    /// attachment appended when the command finishes.
+    pub is_preview: bool,
 }
 
 pub fn register(
@@ -68,12 +72,26 @@ pub fn register(
                 channels.send_attachment(Attachment {
                     filename: filename.clone(),
                     data,
+                    is_preview: false,
                 })
             })?;
             Ok(())
         })?,
     )?;
-
+    lua.globals().set(
+        "preview",
+        lua.create_function(move |lua, (filename, data): (String, mlua::String)| {
+            let data = data.as_bytes().to_vec();
+            with_current_channels(lua, |channels| {
+                channels.send_attachment(Attachment {
+                    filename: filename.clone(),
+                    data,
+                    is_preview: true,
+                })
+            })?;
+            Ok(())
+        })?,
+    )?;
     lua.globals().set(
         "fetch",
         lua.create_async_function(|lua, url: String| async move {

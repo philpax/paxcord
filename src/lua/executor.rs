@@ -122,7 +122,11 @@ async fn execute_lua_thread_impl(
 
             // Handle attachments
             Some(attachment) = attachment_stream.next() => {
-                outputter.add_attachment(attachment);
+                if attachment.is_preview {
+                    outputter.set_preview(attachment);
+                } else {
+                    outputter.add_attachment(attachment);
+                }
             }
 
             // Handle thread stream
