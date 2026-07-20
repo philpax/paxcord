@@ -540,6 +540,17 @@ discord.register_reply_handler("ask", function(chain)
 		error("Original seed parameter not available - cannot continue conversation")
 	end
 
+	-- The model may have been recovered from the footer of an old message,
+	-- so it can name a model that is no longer served after a roster change.
+	-- Without this check the dead id goes straight upstream and surfaces as
+	-- an opaque API error.
+	local model_exists = #filter(llm.models, function(m)
+		return m.id == model
+	end) > 0
+	if not model_exists then
+		error("Model '" .. model .. "' is no longer available - start a new conversation")
+	end
+
 	-- Default system prompt if still not found
 	system = system or ask.default_system
 
