@@ -226,7 +226,7 @@ impl CurrencyConverter {
         }
 
         // Try reverse path: find an intermediate currency that has rates to both 'from' and 'to'
-        for (_base, entry) in cache.iter() {
+        for entry in cache.values() {
             if now.duration_since(entry.timestamp).ok()? < CACHE_DURATION
                 && let (Some(base_to_from), Some(base_to_to)) =
                     (entry.rates.get(from), entry.rates.get(to))
